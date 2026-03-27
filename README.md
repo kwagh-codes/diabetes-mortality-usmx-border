@@ -5,7 +5,7 @@
 **Data coverage:** 2018–2023  
 **Sources:** INEGI, CONAPO, CDC WONDER  
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.19246775)
 
 ---
 
@@ -20,7 +20,7 @@ Two mortality measures are computed and mapped:
 
 Spatial analyses include **Local Indicators of Spatial Association (LISA)**, **Getis-Ord G\* hotspot detection**, and **Moran scatterplots**, all produced at the county/municipality level.
 
-> **Data availability:** All data files are archived on Zenodo at [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX). See the [Setup](#setup) section for download and placement instructions.
+> **Data availability:** All data files are archived on Zenodo at [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.19246775). See the [Setup](#setup) section for download and placement instructions.
 
 ---
 
@@ -110,7 +110,7 @@ Running Files 1 and 2 generates the following outputs in `outputs/`:
 
 All data files required to reproduce this analysis are publicly archived on Zenodo:
 
-> Wagh, K. (2025). *Data for: County-Level Spatial Analysis of Diabetes Mortality in the US–Mexico Border Region, 2018–2023* [Dataset]. Zenodo. [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
+> Wagh, K. (2025). *Data for: County-Level Spatial Analysis of Diabetes Mortality in the US–Mexico Border Region, 2018–2023* [Dataset]. Zenodo. [https://doi.org/10.5281/zenodo.19246775](https://doi.org/10.5281/zenodo.19246775)
 
 The Zenodo archive contains three folders matching the `data/` structure above:
 
@@ -197,7 +197,7 @@ here::set_here()   # creates a .here file at the repo root
 
 ### 3. Download data from Zenodo
 
-1. Go to [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
+1. Go to [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.19246775)
 2. Download the three folders: **raw.zip**, **external.zip**, and **processed.zip**
 3. Extract each ZIP and place the contents inside your local `data/` folder so the structure matches the [Repository Structure](#repository-structure) section above
 
@@ -228,10 +228,10 @@ quarto render qmd/2_Diabetes_USA_Mexico_Border_States_Maps.qmd
 If you use this code or data, please cite:
 
 **Code repository:**
-> Wagh, K. (2025). *Diabetes mortality in the US–Mexico border region: county-level spatial analysis, 2018–2023* [Code]. GitHub. https://github.com/<your-username>/<repo-name>
+> Wagh, K. (2025). *Diabetes mortality in the US–Mexico border region: county-level spatial analysis, 2018–2023* [Code]. GitHub. https://github.com/kwagh-codes/diabetes-mortality-usmx-border
 
 **Data archive:**
-> Wagh, K. (2025). *Data for: County-Level Spatial Analysis of Diabetes Mortality in the US–Mexico Border Region, 2018–2023* [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.XXXXXXX
+> Wagh, K. (2025). *Data for: County-Level Spatial Analysis of Diabetes Mortality in the US–Mexico Border Region, 2018–2023* [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.19246775
 
 ---
 
