@@ -1,0 +1,535 @@
+---
+title: "3.Diabetes Burden USA Mexico Border Map"
+author: "Kaustubh Wagh"
+date: today
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    theme: cosmo
+    fig-width: 12
+    fig-height: 8
+    warning: false
+    message: false
+editor: visual
+---
+
+## Map
+
+```{r paths-config, include=FALSE}
+# ── Project paths ─────────────────────────────────────────────────────────────
+# All paths are resolved relative to the project root using {here}.
+# Place a blank `.here` file (or an `.Rproj` file) at the repo root.
+
+library(here)
+
+# Shapefiles
+path_shapefiles <- here("data", "external", "shapefiles")
+
+# Processed outputs
+path_proc <- here("data", "processed")
+
+# GBD data
+path_gbd <- here("data", "raw", "gbd", "GBD_diabetes_2021_USMX.rds")
+```
+
+```{r setup, warning=FALSE, echo=FALSE, include=FALSE}
+
+# install.packages("rnaturalearth")
+
+required_packages <- c(
+  "sf", "maps", "mapdata", "usmap", "leaflet", "plotly",
+  "viridis", "RColorBrewer", "scales", "tigris", "rmapshaper"
+)
+
+# Uncomment to install missing packages
+install.packages(required_packages[!required_packages %in% installed.packages()])
+
+library(sf)
+library(ggplot2) 
+library(dplyr)
+library(viridis)
+library(leaflet)
+library(DT)
+library(scales)
+library(foreign)
+library(rnaturalearth)
+library(rnaturalearthhires)
+
+library(maps)
+library(mapdata)
+library(usmap)
+library(plotly)
+library(RColorBrewer)
+library(scales)
+library(tigris)
+library(rmapshaper)
+
+# Set spatial options
+options(tigris_use_cache = TRUE)
+sf_use_s2(FALSE)  # Disable spherical geometry for simpler operations
+
+# 1. Set path
+file_path <- path_shapefiles
+
+# 2. Load municipalities in Mexico and counties in USA
+
+# Define US border states by their CVE_ENT codes
+mx_border_states <- c(
+  "02",  # Baja California
+  "05",  # Coahuila
+  "08",  # Chihuahua
+  "19",  # Nuevo LeC3n
+  "26",  # Sonora
+  "28"   # Tamaulipas
+)
+
+us_border_states <- c(
+  "04",  # Arizona
+  "06",  # California  
+  "35",  # New Mexico
+  "48"   # Texas
+)
+
+mexico_mun <- st_read(file.path(file_path, "00mun.shp"), options = "ENCODING=LATIN1")
+mexico_states <- st_read(file.path(file_path, "00ent.shp"), options = "ENCODING=LATIN1")
+
+usa_counties <- st_read(file.path(file_path, "tl_2024_us_county.shp"))
+usa_states <- st_read(file.path(file_path, "tl_2024_us_state.shp"))
+
+
+# Rename columns in the mexico datasets
+mexico_mun <- mexico_mun %>%
+  rename(
+    STATEFP = CVE_ENT,
+    COUNTYFP = CVE_MUN,
+    COUNTY_NAME = NOMGEO,
+    GEOID = CVEGEO
+  )
+
+mexico_states <- mexico_states %>%
+  rename(
+    STATEFP = CVE_ENT,
+    STATE_NAME = NOMGEO,
+    GEOID = CVEGEO
+  )
+
+usa_states <- usa_states %>%
+  rename(
+    STATE_NAME = NAME
+  )
+
+usa_counties <- usa_counties %>%
+  rename(
+    COUNTY_NAME = NAME
+  )
+
+# st_geometry_type(usa_counties)
+# st_geometry_type(mexico_mun)
+
+# Standardize columns before binding
+# names(mexico_mun) <- names(usa_counties)
+
+# st_crs(usa_counties)
+# st_crs(mexico_mun)
+
+# Match mexico_mun to the CRS of usa_counties
+usa_counties <- st_transform(usa_counties, st_crs(mexico_mun))
+usa_states <- st_transform(usa_states, st_crs(mexico_states))
+
+
+# Select only the common columns from each
+usa_subset <- usa_counties %>%
+  select(STATEFP, COUNTYFP, COUNTY_NAME, GEOID, geometry)%>%
+  mutate(COUNTRY = "USA")
+
+mexico_subset <- mexico_mun %>%
+  select(STATEFP, COUNTYFP, COUNTY_NAME, GEOID, geometry)%>%
+  mutate(COUNTRY = "Mexico")
+
+
+usa_states_subset <- usa_states %>%
+  select(STATEFP, STATE_NAME, GEOID, geometry) %>%
+  mutate(COUNTRY = "USA")
+
+mexico_states_subset <- mexico_states %>%
+  select(STATEFP, STATE_NAME, GEOID, geometry) %>%
+  mutate(COUNTRY = "Mexico")
+
+# Append
+usa_mexico_counties <- rbind(usa_subset, mexico_subset)
+usa_mexico_states <- rbind(usa_states_subset, mexico_states_subset)
+
+# Tag counties as part of US-Mexico border states
+usa_mexico_counties <- usa_mexico_counties %>%
+  mutate(
+    is_us_border = case_when(
+      COUNTRY == "USA" & STATEFP %in% us_border_states ~ "US-Mexico Border State",
+      COUNTRY == "Mexico" & STATEFP %in% mx_border_states ~ "US-Mexico Border State",      TRUE ~ "Interior State"
+    )
+  )
+
+
+excluded_statefps <- c(
+  "02",  # Alaska
+  "15",  # Hawaii
+  "72",  # Puerto Rico
+  "60",  # American Samoa
+  "66",  # Guam
+  "69",  # Northern Mariana Islands
+  "78"   # U.S. Virgin Islands
+)
+
+# Filter counties
+usa_mexico_counties_filtered <- usa_mexico_counties %>%
+  filter(!(COUNTRY == "USA" & STATEFP %in% excluded_statefps))
+
+saveRDS(usa_mexico_counties_filtered, file.path(path_proc, "map_data_counties_USMX.rds"))
+
+# Filter states
+usa_mexico_states_filtered <- usa_mexico_states %>%
+  filter(!(COUNTRY == "USA" & STATEFP %in% excluded_statefps))
+
+# Ensure STATEFP is character type
+usa_mexico_counties$STATEFP <- as.character(usa_mexico_counties$STATEFP)
+
+
+# Download the dataset
+boundaries <- ne_download(scale = 10, type = "admin_0_boundary_lines_land", category = "cultural", returnclass = "sf")
+
+us_mexico_border <- boundaries %>%
+  filter(
+    (ADM0_LEFT == "United States of America" & ADM0_RIGHT == "Mexico") |
+    (ADM0_RIGHT == "United States of America" & ADM0_LEFT == "Mexico")
+  )
+
+us_mexico_border <- st_union(us_mexico_border) %>%
+  st_cast("MULTILINESTRING")
+
+# read diabetes data
+diabetes_data <- readRDS(path_gbd)
+
+# Prepare diabetes data for mapping (2021 prevalence)
+diabetes_map_data <- diabetes_data %>%
+  filter(
+    year == 2021,
+    metric_name == "Rate",
+    age_name == "All ages",
+    sex_name == "Both",
+    cause_name == "Diabetes mellitus",
+    measure_name == "Prevalence"
+  ) %>%
+  mutate(
+    # Standardize location names for matching
+    location_clean = case_when(
+      location_name == "Nuevo LeC3n" ~ "Nuevo Leon",
+      location_name == "Nuevo LeCB3n" ~ "Nuevo Leon",
+      TRUE ~ location_name
+    )
+  ) %>%
+  rename(
+    COUNTRY = country,
+    STATE_NAME = location_name
+  )
+
+usa_mexico_states_filtered <- usa_mexico_states_filtered %>% 
+   mutate(
+    STATE_NAME = ifelse(
+      tolower(trimws(STATE_NAME)) == "coahuila de zaragoza",
+      "Coahuila",
+      STATE_NAME
+    )
+  )
+
+saveRDS(usa_mexico_states_filtered, file.path(path_proc, "map_data_states_USMX.rds"))
+
+
+# join state-level diabetes data with shapefiles
+# Join using both STATE_NAME and COUNTRY
+
+usa_mexico_states_filtered <- 
+
+joined_diabetes_map_states_data <- left_join(
+  usa_mexico_states_filtered,
+  diabetes_map_data,
+  by = c("STATE_NAME", "COUNTRY")
+)
+
+saveRDS(joined_diabetes_map_states_data, file.path(path_proc, "GBD_diabetes_2021_map_data_states_USMX.rds"))
+
+# For county-level diabetes data in Mexico only mortality data exist using INEGI.  
+# For other country-level data exist in ENSUNAT data sets for mexico but its survey samples are weighted at state-level 
+# For County-level data for USA explore BRFSS and other CDC resources liek CDC WONDER
+#  Bring dataset which has been combined for USA and Mexico from file 2. county-level mortality
+
+# load datasets
+load("county_dm_mor_data_USMX.RData")
+map_data_counties_USMX <-readRDS(file.path(path_proc, "map_data_counties_USMX.rds"))
+
+# join county-level diabetes data with shapefiles
+# Join using both COUNTYFP, STATEFP, COUNTRY
+joined_diabetes_map_county_data <- left_join(
+  map_data_counties_USMX %>% select(-COUNTY_NAME, -GEOID),
+  county_dm_mor_data_USMX,
+  by = c("COUNTRY","STATEFP", "COUNTYFP")
+)
+
+# str(joined_diabetes_map_county_data)
+# glimpse(joined_diabetes_map_county_data)
+
+
+# Save as RData file (could save multiple objects) - Recommended for R
+save(joined_diabetes_map_county_data, file = "joined_diabetes_map_county_data.RData")
+
+
+```
+
+## 1. Static Choropleth Maps
+
+#### State
+
+```{r state_map1, warning=FALSE, echo=FALSE}
+
+#| label: fig-static-choropleth
+#| fig-cap: "Diabetes Prevalence: US-Mexico Border States Only (2021)"
+
+
+# Define border states for reference
+border_states <- c(
+  "Arizona", "California", "New Mexico", "Texas",  # US
+  "Baja California", "Chihuahua", "Coahuila", 
+  "Nuevo LeC3n", "Nuevo Leon", "Sonora", "Tamaulipas"  # Mexico
+)
+
+# Create static choropleth map with proper NA handling
+border_choropleth <- ggplot(joined_diabetes_map_data) +
+  # All regions in gray first (interior states/regions)
+  geom_sf(fill = "grey85", color = "white", size = 0.2) +
+  
+  # Overlay border states with diabetes data
+  geom_sf(
+    data = joined_diabetes_map_data %>% filter(!is.na(val), metric_name == "Rate"),
+    aes(fill = val), 
+    color = "white", 
+    size = 0.3
+  ) +
+  
+  scale_fill_viridis_c(
+    name = "Diabetes\nPrevalence\n(per 100,000)",
+    option = "plasma",
+    labels = comma_format(),
+    guide = guide_colorbar(
+      title.position = "top",
+      title.hjust = 0.5,
+      barwidth = 15,
+      barheight = 1.5
+    )
+  ) +
+  
+  labs(
+    title = "Diabetes Prevalence: US-Mexico Border States (2021)",
+    subtitle = "Age-standardized rates per 100,000 population\nGray areas = Interior states/regions (no border health data)",
+    caption = "Data: IHME Global Burden of Disease 2021\nAnalysis limited to US-Mexico border states only"
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40", margin = margin(b = 10)),
+    plot.caption = element_text(size = 10, hjust = 0.5, color = "gray60", margin = margin(t = 10)),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.margin = margin(20, 20, 20, 20),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+#print(border_choropleth)
+
+# Add labels ONLY for border states with data
+border_data_only <- joined_diabetes_map_data %>%
+  filter(!is.na(val),metric_name == "Rate")
+
+if(nrow(border_data_only) > 0) {
+  
+  # Calculate centroids for labeling ONLY border states
+  centroids <- border_data_only %>%
+    st_centroid() %>%
+    mutate(
+      lon = st_coordinates(.)[,1],
+      lat = st_coordinates(.)[,2]
+    ) %>%
+    st_drop_geometry()
+  
+  labeled_map <- border_choropleth +
+    # Add border state labels with values
+    geom_text(
+      data = centroids,
+      aes(x = lon, y = lat, label = paste0(
+        substr(STATE_NAME, 1, 3), "\n", 
+        round(val, 0)
+      )),
+      color = "white",
+      fontface = "bold",
+      size = 2,
+      stroke = 0.3
+    ) +
+    
+    # Add border line to emphasize US-Mexico boundary
+    geom_hline(
+      yintercept = 32.5,  # Approximate border latitude
+      color = "#FF4444", 
+      size = 1.2, 
+      alpha = 0.8, 
+      linetype = "dashed"
+    ) +
+    
+    labs(
+      title = "Diabetes Prevalence: US-Mexico Border States (2021)",
+      subtitle = "Colored regions = Border states with data | Gray regions = Interior states/regions\nRed dashed line indicates approximate US-Mexico border",
+      caption = "Data: IHME Global Burden of Disease 2021 | Analysis limited to border states only"
+    )
+  
+  print(labeled_map)
+  
+} else {
+  cat("No border state data found for mapping. Check data matching.\n")
+}
+
+```
+
+#### County
+
+```{r county_map1, warning=FALSE, echo=FALSE}
+
+# Define border states for reference
+border_states <- c(
+  "Arizona", "California", "New Mexico", "Texas",  # US
+  "Baja California", "Chihuahua", "Coahuila", 
+  "Nuevo LeC3n", "Nuevo Leon", "Sonora", "Tamaulipas"  # Mexico
+)
+
+# Create static choropleth map with proper NA handling
+border_county_choropleth <- ggplot(joined_diabetes_map_county_data) +
+  # All regions in gray first (interior states/regions)
+  geom_sf(fill = "grey85", color = "white", size = 0.2) +
+  
+  # Overlay border states with diabetes data
+  geom_sf(
+    data = joined_diabetes_map_county_data %>% filter(!is.na(`Crude Rate`)),
+    aes(fill = `Crude Rate`), 
+    color = "white", 
+    size = 0.3
+  ) +
+  
+  scale_fill_viridis_c(
+    name = "Diabetes\nCrude Death Rate\n(per 100,000)",
+    option = "plasma",
+    labels = comma_format(),
+    guide = guide_colorbar(
+      title.position = "top",
+      title.hjust = 0.5,
+      barwidth = 15,
+      barheight = 1.5
+    )
+  ) +
+  
+  labs(
+    title = "Diabetes Mortality: US-Mexico Border States (2021)",
+    subtitle = "Age-standardized rates per 100,000 population\nGray areas = Interior states/regions (no border health data)",
+    caption = "Data: IHME Global Burden of Disease 2021\nAnalysis limited to US-Mexico border states only"
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40", margin = margin(b = 10)),
+    plot.caption = element_text(size = 10, hjust = 0.5, color = "gray60", margin = margin(t = 10)),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.margin = margin(20, 20, 20, 20),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+# print(border_county_choropleth)
+
+# Add labels ONLY for border states with data
+border_data_only <- joined_diabetes_map_county_data %>%
+  filter(!is.na(`Crude Rate`))
+
+if(nrow(border_data_only) > 0) {
+  
+  # Calculate centroids for labeling ONLY border states
+  centroids <- border_data_only %>%
+    st_centroid() %>%
+    mutate(
+      lon = st_coordinates(.)[,1],
+      lat = st_coordinates(.)[,2]
+    ) %>%
+    st_drop_geometry()
+  
+  labeled_map <- border_county_choropleth +
+    # Add border state labels with values
+    geom_text(
+      data = centroids,
+      aes(x = lon, y = lat, label = paste0(
+        substr(STATE_NAME, 1, 3), "\n", 
+        round(`Crude Rate`, 0)
+      )),
+      color = "white",
+      fontface = "bold",
+      size = 2,
+      stroke = 0.3
+    ) +
+    
+    # Add border line to emphasize US-Mexico boundary
+    geom_hline(
+      yintercept = 32.5,  # Approximate border latitude
+      color = "#FF4444", 
+      size = 1.2, 
+      alpha = 0.8, 
+      linetype = "dashed"
+    ) +
+    
+    labs(
+      title = "Diabetes Mortality: US-Mexico Border States (2021)",
+      subtitle = "Colored regions = Border states with data | Gray regions = Interior states/regions\nRed dashed line indicates approximate US-Mexico border",
+      caption = "Data: IHME Global Burden of Disease 2021 | Analysis limited to border states only"
+    )
+  
+  print(labeled_map)
+  
+} else {
+  cat("No border state data found for mapping. Check data matching.\n")
+}
+
+```
+
+```{r map-test, warning=FALSE, include=FALSE}
+# Plot
+us_mx_border_map <- ggplot() +
+  geom_sf(data = usa_mexico_counties_filtered, 
+          aes(fill = is_us_border), 
+          color = "white", 
+          size = 0.05) +
+  geom_sf(data = usa_mexico_states_filtered, 
+          fill = NA, 
+          color = "#2C3E50", 
+          size = 0.6) +
+   geom_sf(data = us_mexico_border, 
+          color = "red", 
+          size = 20,    # Thicker line for international border
+          linetype = "solid") +
+  scale_fill_manual(
+    name = "State Type",
+    values = c("US-Mexico Border State" = "#3498DB", "Interior State" = "#ECEFF1"),
+    guide = guide_legend(override.aes = list(color = "black", size = 0.5))
+  ) +
+  theme_void() +
+  labs(
+    title = "Mexicob
+```

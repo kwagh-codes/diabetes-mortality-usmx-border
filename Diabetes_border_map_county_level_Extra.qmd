@@ -1,0 +1,380 @@
+---
+title: "Diabetes Mortality Rates in US-Mexico Border Region"
+author: "Your Name"
+date: "`r Sys.Date()`"
+format: 
+  html:
+    toc: true
+    code-fold: true
+    theme: cosmo
+    fig-width: 12
+    fig-height: 8
+execute:
+  warning: false
+  message: false
+---
+
+```{r paths-config, include=FALSE}
+# ── Project paths ─────────────────────────────────────────────────────────────
+# All paths are resolved relative to the project root using {here}.
+# Place a blank `.here` file (or an `.Rproj` file) at the repo root.
+
+library(here)
+
+# Processed data (produced by File 1)
+path_proc <- here("data", "processed")
+```
+
+```{r setup}
+#| include: false
+
+# install.packages("rnaturalearthdata")
+
+# Load required libraries
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(viridis)
+library(scales)
+library(patchwork)
+library(RColorBrewer)
+library(ggspatial)
+
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# Set theme for plots
+theme_set(theme_minimal(base_size = 12))
+```
+
+## Map
+
+#### Crude Diabetes Mortality Rate
+
+```{r data-prep}
+# Load the RData file
+load("joined_diabetes_map_county_data.RData")
+
+data<- joined_diabetes_map_county_data
+
+# Filter for border states
+# US border states: California, Arizona, New Mexico, Texas
+# Mexico border states: Baja California, Sonora, Chihuahua, Coahuila, Nuevo León, Tamaulipas
+
+border_states_us <- c("California", "Arizona", "New Mexico", "Texas")
+border_states_mx <- c("Baja California", "Sonora", "Chihuahua", "Coahuila", 
+                      "Nuevo León", "Tamaulipas")
+
+# Filter data for border region
+border_data <- data %>%
+  filter(STATE_NAME %in% c(border_states_us, border_states_mx))
+
+# Create categories for mapping
+border_data <- border_data %>%
+  mutate(
+    # Clean crude rate variable (handle any text/character issues)
+    crude_rate_clean = as.numeric(`Crude Rate`),
+    # Create rate categories (diabetes mortality per 100,000)
+    rate_category = case_when(
+      crude_rate_clean < 25 ~ "< 25 (Low)",
+      crude_rate_clean >= 25 & crude_rate_clean < 50 ~ "25-50 (Moderate)",
+      crude_rate_clean >= 50 & crude_rate_clean < 100 ~ "50-100 (High)",
+      crude_rate_clean >= 100 & crude_rate_clean < 150 ~ "100-150 (Very High)",
+      crude_rate_clean >= 150 ~ "≥ 150 (Extremely High)",
+      TRUE ~ "No Data"
+    ),
+    # Create border status
+    # border_status = ifelse(is_us_border == 1, "Border County", "Non-Border County"),
+    # Country indicator
+    country_clean = case_when(
+      COUNTRY == "US" | COUNTRY == "USA" ~ "United States",
+      COUNTRY == "MX" | COUNTRY == "Mexico" ~ "Mexico",
+      TRUE ~ COUNTRY
+    )
+  )
+
+# Set factor levels for consistent coloring
+border_data$rate_category <- factor(border_data$rate_category, 
+                                   levels = c("(Very Low)", "< 25 (Low)", "25-50 (Moderate)", "50-100 (High)", 
+                                             "100-150 (Very High)", "≥ 150 (Extremely High)", "No Data"))
+
+print(paste("Total counties in border region:", nrow(border_data)))
+print("Summary of crude rates:")
+
+border_data %>%
+  filter(crude_rate_clean != 9999) %>%
+  pull(crude_rate_clean) %>%
+  summary()
+
+# Summary statistics by country and border status
+summary_stats <- border_data %>%
+  st_drop_geometry() %>%
+  filter(!is.na(crude_rate_clean)) %>%
+  group_by(country_clean) %>%
+  summarise(
+    n_counties = n(),
+    mean_rate = round(mean(crude_rate_clean, na.rm = TRUE), 1),
+    median_rate = round(median(crude_rate_clean, na.rm = TRUE), 1),
+    min_rate = round(min(crude_rate_clean, na.rm = TRUE), 1),
+    max_rate = round(max(crude_rate_clean, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+knitr::kable(summary_stats, caption = "Diabetes Mortality Rate Summary by Country")
+
+#| fig-width: 14
+#| fig-height: 10
+
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05) 
+
+# Create the map
+main_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add your diabetes data on top
+  geom_sf(data = border_data, aes(fill = rate_category), color = "white", size = 0.1) +
+  
+  # ADD STATE BOUNDARIES ON TOP - this is the key addition
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.5, alpha = 0.8) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "white", color = "black", size = 2, alpha = 0.8) +
+  
+  # scale_fill_viridis_d(
+  #   name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+  #   option = "plasma",
+  #   direction = -1,
+  #   na.value = "grey90"
+  # ) +
+  
+    scale_fill_manual(
+    name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+    values = c(
+    "< 25 (Low)" = "#fee5d9",
+    "25-50 (Moderate)" = "#fcbba1", 
+    "50-100 (High)" = "#fc9272",
+    "100-150 (Very High)" = "#fb6a4a",
+    "≥ 150 (Extremely High)" = "#de2d26",
+    "No Data" = "#fef5f0"
+    )) +
+  
+  # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Diabetes Mortality Rate by County",
+    subtitle = "US-Mexico Border Region",
+    caption = paste("Data covers", "2018-2023", "| Source: INEGI, CONAPO, CDC")
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm"),
+    plot.margin = margin(1, 1, 1, 1, "cm")
+  ) +
+  
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(main_map)
+
+```
+
+### Age-standardized Rate
+
+```{r}
+
+# Load the RData file
+load("joined_asdmr_map_county_data.RData")
+
+data<- joined_asdmr_map_county_data
+
+# Filter for border states
+# US border states: California, Arizona, New Mexico, Texas
+# Mexico border states: Baja California, Sonora, Chihuahua, Coahuila, Nuevo León, Tamaulipas
+
+border_states_us <- c("California", "Arizona", "New Mexico", "Texas")
+border_states_mx <- c("Baja California", "Sonora", "Chihuahua", "Coahuila", 
+                      "Nuevo León", "Tamaulipas")
+
+# Filter data for border region
+border_data <- data %>%
+  filter(STATE_NAME %in% c(border_states_us, border_states_mx))
+
+# Create categories for mapping
+border_data <- border_data %>%
+  mutate(
+    # Clean crude rate variable (handle any text/character issues)
+    asmr_clean = as.numeric(asmr_per_100k),
+    # Create rate categories (diabetes mortality per 100,000)
+    rate_category = case_when(
+      asmr_clean < 25 ~ "< 25 (Low)",
+      asmr_clean >= 25 & asmr_clean < 50 ~ "25-50 (Moderate)",
+      asmr_clean >= 50 & asmr_clean < 100 ~ "50-100 (High)",
+      asmr_clean >= 100 & asmr_clean < 150 ~ "100-150 (Very High)",
+      asmr_clean >= 150 ~ "≥ 150 (Extremely High)",
+      TRUE ~ "No Data"
+    ),
+    # Create border status
+    # border_status = ifelse(is_us_border == 1, "Border County", "Non-Border County"),
+    # Country indicator
+    country_clean = case_when(
+      COUNTRY == "US" | COUNTRY == "USA" ~ "United States",
+      COUNTRY == "MX" | COUNTRY == "Mexico" ~ "Mexico",
+      TRUE ~ COUNTRY
+    )
+  )
+
+# Set factor levels for consistent coloring
+border_data$rate_category <- factor(border_data$rate_category, 
+                                   levels = c("(Very Low)", "< 25 (Low)", "25-50 (Moderate)", "50-100 (High)", 
+                                             "100-150 (Very High)", "≥ 150 (Extremely High)", "No Data"))
+
+print(paste("Total counties in border region:", nrow(border_data)))
+print("Summary of crude rates:")
+
+border_data %>%
+  filter(asmr_clean != 9999) %>%
+  pull(asmr_clean) %>%
+  summary()
+
+# Summary statistics by country and border status
+summary_stats <- border_data %>%
+  st_drop_geometry() %>%
+  filter(!is.na(asmr_clean)) %>%
+  group_by(country_clean) %>%
+  summarise(
+    n_counties = n(),
+    mean_rate = round(mean(asmr_clean, na.rm = TRUE), 1),
+    median_rate = round(median(asmr_clean, na.rm = TRUE), 1),
+    min_rate = round(min(asmr_clean, na.rm = TRUE), 1),
+    max_rate = round(max(asmr_clean, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+knitr::kable(summary_stats, caption = "Age-std Diabetes Mortality Rate Summary by Country")
+
+
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05) 
+
+# Create the map
+asdmr_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add your diabetes data on top
+  geom_sf(data = border_data, aes(fill = rate_category), color = "white", size = 0.1) +
+  
+  # ADD STATE BOUNDARIES ON TOP - this is the key addition
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.5, alpha = 0.8) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "white", color = "black", size = 2, alpha = 0.8) +
+  
+  # scale_fill_viridis_d(
+  #   name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+  #   option = "plasma",
+  #   direction = -1,
+  #   na.value = "grey90"
+  # ) +
+  
+    scale_fill_manual(
+    name = "Age-standardized Diabetes Mortality Rate\n(deaths per 100,000)",
+    values = c(
+    "< 25 (Low)" = "#fee5d9",
+    "25-50 (Moderate)" = "#fcbba1", 
+    "50-100 (High)" = "#fc9272",
+    "100-150 (Very High)" = "#fb6a4a",
+    "≥ 150 (Extremely High)" = "#de2d26",
+    "No Data" = "#fef5f0"
+    )) +
+  
+  # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Age-standardized Diabetes Mortality Rate by County",
+    subtitle = "US-Mexico Border Region",
+    caption = paste("Data covers", "2018-2023", "| Source: INEGI, CONAPO, CDC")
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5),
+    legend.position = "bottom",
+    legend.key.width = unit(1.0, "cm"),
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(asdmr_map)
+
+ggsave("asmr_county_map.png", asdmr_map, width = 8, height = 6, dpi = 300, bg = "white")
+
+```
+

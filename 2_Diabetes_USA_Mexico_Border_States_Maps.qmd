@@ -1,0 +1,2006 @@
+---
+title: "Diabetes Burden in US-Mexico Border States using GBD 2021"
+format: 
+  html:
+    embed-resources: true
+    df-print: paged
+    highlight: pygments
+    theme: cerulean
+    toc: true
+    toc-depth: 4
+    number-sections: false
+    toc-float: 
+      collapsed: false
+      smooth-scroll: false
+execute:
+  echo: true
+css: styles.css
+date: today
+---
+
+## Setup
+
+```{r paths-config, include=FALSE}
+# ── Project paths ─────────────────────────────────────────────────────────────
+# All paths are resolved relative to the project root using {here}.
+# Place a blank `.here` file (or an `.Rproj` file) at the repo root so
+# here::here() always anchors correctly regardless of working directory.
+
+library(here)
+
+# Processed data (produced by File 1)
+path_proc <- here("data", "processed")
+```
+
+```{r setup, include=FALSE}
+
+#| include: false
+
+# Source IHME GBD 2021
+# install.packages("janitor")
+# install.packages("kableExtra")
+# install.packages("rnaturalearthdata")
+# install.packages("tidyverse")
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(kableExtra)
+library(scales)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+library(spdep)
+library(sf)
+library(leaflet)
+
+
+library(viridis)
+
+library(patchwork)
+library(RColorBrewer)
+library(ggspatial)
+
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# Set theme for plots
+theme_set(theme_minimal(base_size = 12))
+```
+
+## Maps: Spatial Autocorrelation and Clustering Analysis
+
+### Crude Mortality Rate
+
+#### State
+
+```{r spatial1, echo=FALSE, warning=FALSE}
+#| label: spatial-clustering
+#| fig-width: 14
+#| fig-height: 10
+
+
+states_map_data_USMX <- readRDS(file.path(path_proc, "map_data_states_USMX.rds"))
+
+# Advanced spatial analysis for state
+  # Merge spatial and diabetes data
+#   merged_data <-states_map_data_USMX %>%
+#     left_join(
+#       df %>%
+#         filter(
+#           year == 2021,
+#           metric_name == "Rate",
+#           age_name == "All ages",
+#           sex_name == "Both",
+#           cause_name== "Overall",
+#           measure_name == "Prevalence"
+#         ) %>% 
+#       mutate(
+#     # Standardize location names for matching
+#     location_clean = case_when(
+#       location_name == "Nuevo León" ~ "Nuevo Leon",
+#       location_name == "Nuevo LeÃ³n" ~ "Nuevo Leon",
+#       TRUE ~ location_name
+#     )
+#   ) %>%
+#   rename(
+#     COUNTRY = country,
+#     STATE_NAME = location_name
+#   ),
+#       by = c("STATE_NAME", "COUNTRY")
+#     )
+#   
+#   # Create spatial weights matrix
+# filtered_data <- merged_data[!is.na(merged_data$val), ]
+# 
+# coords <- st_coordinates(st_centroid(filtered_data,of_largest_polygon = TRUE))
+# nb <- knn2nb(knearneigh(coords, k = 1))
+# weights <- nb2listw(nb, style = "W")
+#   
+#   # Calculate spatial autocorrelation
+#   moran_test <- moran.test(filtered_data$val, weights, zero.policy = TRUE, na.action = na.omit)
+#   
+#   # print(moran_test)
+#   
+#   # Local indicators of spatial association (LISA)
+#   lisa <- localmoran(filtered_data$val, weights, na.action = na.exclude, zero.policy = TRUE)
+#   
+#   lag_val <- lag.listw(weights, filtered_data$val, zero.policy = TRUE, NAOK = TRUE)
+#   mean_val <- mean(filtered_data$val, na.rm = TRUE)
+# 
+#   # Assign basic cluster type
+#   cluster_type <- ifelse(
+#     filtered_data$val > mean_val & lag_val > mean_val, "High-High",
+#     ifelse(filtered_data$val < mean_val & lag_val < mean_val, "Low-Low",
+#     ifelse(filtered_data$val < mean_val & lag_val > mean_val, "Low-High", "High-Low"))
+#   )
+#   
+#   # Combine with significance
+#   filtered_data$lisa_cluster <- ifelse(
+#     lisa[,5] < 0.05,
+#     paste0(cluster_type, " (p < 0.05)"),
+#     paste0(cluster_type, " (NS)")
+#   )
+#   
+#   # Convert to factor
+#   filtered_data$lisa_cluster <- as.factor(filtered_data$lisa_cluster)
+#   
+#   # Getis-Ord hot spot analysis
+# getis_ord <- localG(filtered_data$val, weights)
+# # print(getis_ord)
+# 
+# filtered_data$hotspot <- as.factor(
+#   ifelse(getis_ord > 1.96, "Hot Spot (95%)",
+#          ifelse(getis_ord > 1.28, "Hot Spot (80%)",
+#                 ifelse(getis_ord < -1.28, "Cold Spot (80%)",
+#                        ifelse(getis_ord < -1.96, "Cold Spot (95%)",
+#                               "Not Significant"))))
+# )
+```
+
+#### County
+
+```{r spatial1, echo=FALSE, warning=FALSE}
+######################################################################################
+# State-level spatial correlation doesn't exist. Continue with County-level analysis
+######################################################################################
+
+load("joined_diabetes_map_county_data.RData")
+# counties_map_data_USMX <-joined_diabetes_map_county_data
+
+# Advanced spatial analysis for counties
+# Create spatial weights matrix
+filtered_data_ct <- joined_diabetes_map_county_data[!is.na(joined_diabetes_map_county_data$`Crude Rate`), ]
+
+coords <- st_coordinates(st_centroid(filtered_data_ct,of_largest_polygon = TRUE))
+nb <- knn2nb(knearneigh(coords, k = 3))
+weights <- nb2listw(nb, style = "W")
+  
+  # Calculate spatial autocorrelation using global Moran's I test
+  moran_test <- moran.test(filtered_data_ct$`Crude Rate`, weights, zero.policy = TRUE, na.action = na.omit)
+  
+  print(moran_test)
+
+  
+  # Local indicators of spatial association (LISA)
+  lisa <- localmoran(filtered_data_ct$`Crude Rate`, weights, na.action = na.exclude, zero.policy = TRUE)
+  lag_val <- lag.listw(weights, filtered_data_ct$`Crude Rate`, zero.policy = TRUE, NAOK = TRUE)
+  mean_val <- mean(filtered_data_ct$`Crude Rate`, na.rm = TRUE)
+  
+  # Add results to your spatial data
+filtered_data_ct$local_moran_i <- lisa[, "Ii"]          # Local Moran's I statistic
+filtered_data_ct$local_moran_p <- lisa[, "Pr(z != E(Ii))"]  # p-values
+filtered_data_ct$local_moran_z <- lisa[, "Z.Ii"]       # Z-scores
+
+
+# Create significance categories
+filtered_data_ct$significance <- case_when(
+  filtered_data_ct$local_moran_p <= 0.05 ~ "Significant",
+  TRUE ~ "Not significant"
+)
+
+# Create LISA (Local Indicators of Spatial Association) categories
+# This identifies High-High, Low-Low, High-Low, Low-High clusters
+filtered_data_ct$crude_rate_lag <- lag.listw(weights, filtered_data_ct$`Crude Rate`, zero.policy = TRUE)
+filtered_data_ct$crude_rate_mean <- mean(filtered_data_ct$`Crude Rate`, na.rm = TRUE)
+filtered_data_ct$crude_rate_lag_mean <- mean(filtered_data_ct$crude_rate_lag, na.rm = TRUE)
+
+filtered_data_ct$lisa_category <- case_when(
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`Crude Rate` > filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag > filtered_data_ct$crude_rate_lag_mean ~ "High-High",
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`Crude Rate` < filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag < filtered_data_ct$crude_rate_lag_mean ~ "Low-Low",
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`Crude Rate` > filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag < filtered_data_ct$crude_rate_lag_mean ~ "High-Low",
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`Crude Rate` < filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag > filtered_data_ct$crude_rate_lag_mean ~ "Low-High",
+  TRUE ~ "Not significant"
+)
+
+# Assign basic cluster type
+  cluster_type <- ifelse(
+    filtered_data_ct$`Crude Rate` > mean_val & lag_val > mean_val, "High-High",
+    ifelse(filtered_data_ct$`Crude Rate` < mean_val & lag_val < mean_val, "Low-Low",
+    ifelse(filtered_data_ct$`Crude Rate` < mean_val & lag_val > mean_val, "Low-High", "High-Low"))
+  )
+  
+# Combine with significance
+  filtered_data_ct$lisa_cluster <- ifelse(
+    lisa[,5] < 0.05,
+    paste0(cluster_type, " (p < 0.05)"),
+    paste0(cluster_type, " (NS)")
+  )
+  
+# Convert to factor
+  filtered_data_ct$lisa_cluster <- as.factor(filtered_data_ct$lisa_cluster)
+  
+# Getis-Ord hot spot analysis
+filtered_data_ct$getis_ord <- localG(filtered_data_ct$`Crude Rate`, weights)
+# print(getis_ord)
+
+filtered_data_ct$hotspot <- as.factor(
+  ifelse(filtered_data_ct$getis_ord > 1.96, "Hot Spot (95%)",
+         ifelse(filtered_data_ct$getis_ord > 1.28, "Hot Spot (80%)",
+                ifelse(filtered_data_ct$getis_ord < -1.28, "Cold Spot (80%)",
+                       ifelse(filtered_data_ct$getis_ord < -1.96, "Cold Spot (95%)",
+                              "Not Significant"))))
+)
+
+
+filtered_data_ct <- filtered_data_ct %>%
+  mutate(LISA_simple = case_when(
+    grepl("^High-High.*", lisa_cluster) ~ "High-High",  # Starts with High-High, followed by anything
+    grepl("^Low-Low.*", lisa_cluster) ~ "Low-Low",
+    grepl("^High-Low.*", lisa_cluster) ~ "High-Low",
+    grepl("^Low-High.*", lisa_cluster) ~ "Low-High",
+    TRUE ~ "Not significant"
+  ))
+
+# Create conceptual clustering visualization
+clustering_concept <- filtered_data_ct %>%
+  mutate(
+    burden_category = case_when(
+      `Crude Rate` >= quantile(`Crude Rate`, 0.75, na.rm = TRUE) ~ "High Burden",
+      `Crude Rate` >= quantile(`Crude Rate`, 0.5, na.rm = TRUE) ~ "Moderate-High Burden",
+      `Crude Rate` >= quantile(`Crude Rate`, 0.25, na.rm = TRUE) ~ "Moderate-Low Burden",
+      TRUE ~ "Low Burden"
+    ),
+    cluster_risk = case_when(
+      COUNTRY == "Mexico" & `Crude Rate` > median(`Crude Rate`, na.rm = TRUE) ~ "High-Risk Cluster",
+      COUNTRY == "USA" & `Crude Rate` < median(`Crude Rate`, na.rm = TRUE) ~ "Low-Risk Cluster",
+      TRUE ~ "Mixed Pattern"
+    )
+  )
+
+# Clean problematic characters in county names
+clustering_concept$COUNTY_NAME <- iconv(clustering_concept$COUNTY_NAME, 
+                                       from = "latin1", to = "UTF-8", 
+                                       sub = "")
+# # create plot 
+# clustering_plot <- ggplot(clustering_concept, aes(x = reorder(COUNTY_NAME, `Crude Rate`), y = `Crude Rate`)) +
+#   geom_col(aes(fill = burden_category), alpha = 0.8) +
+#   geom_text(aes(label = round(`Crude Rate`, 0)), hjust = -0.1, size = 3) +
+#   scale_fill_viridis_d(option = "plasma") +
+#   scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +  # Add 15% space on right
+#   coord_flip() +
+#   labs(
+#     title = "Diabetes Mortality Burden Clustering Pattern (2018-2023)",
+#     subtitle = "Identification of high and low burden clusters for targeted intervention",
+#     x = "USA MEXICO Border States",
+#     y = "Prevalence Rate per 100,000",
+#     fill = "Burden Category"
+#   ) +
+#   theme_minimal()
+
+# print(clustering_plot)
+
+
+
+
+# Map 1: Conceptual clustering
+
+# Non-spatial classification - only uses crude rate values
+# Top 25% = High Burden, Next 25% = Moderate-High, etc.
+
+#| fig-width: 14
+#| fig-height: 10
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05) 
+
+# Color by burden category instead of continuous rate
+burden_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add your diabetes data on top
+  geom_sf(data = clustering_concept, aes(fill = burden_category), color = "white", size = 0.1) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "white", color = "black", size = 2, alpha = 0.8) +
+    
+  scale_fill_viridis_d(
+    name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+    option = "plasma",
+    direction = -1,
+    na.value = "grey90"
+    ) +
+
+    # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+    
+    labs(title = "Diabetes Mortality Burden Categories",
+         subtitle = "County-level clustering analysis (2018-2023)") +
+    theme_void() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 20)), 
+      legend.position = "bottom",
+      legend.key.width = unit(1.5, "cm"),
+      legend.title = element_text(size = 10, hjust = 0.5),
+      plot.margin = margin(1, 1, 1, 1, "cm")
+    ) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+
+# print(burden_map)- ignore this as no Non-spatial and non-statistical classification
+
+######################################################################################
+# LISA map (most informative): Local Indicator of Spatial Association
+######################################################################################
+LISA_map_cdr <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+
+  geom_sf(data=clustering_concept, aes(fill = LISA_simple), color = "white", size = 0.1) +
+  scale_fill_manual(
+    values = c("High-High" = "#d73027",    # Red: High diabetes surrounded by high
+               "Low-Low" = "#4575b4",      # Blue: Low diabetes surrounded by low
+               "High-Low" = "#f46d43",     # Orange: High diabetes surrounded by low
+               "Low-High" = "#74add1",     # Light blue: Low diabetes surrounded by high
+               "Not significant" = "#e0e0e0"), # Gray: Not significant
+    name = "LISA Category"
+  ) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.3) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "white", color = "black", size = 1, alpha = 0.8) +
+  
+   # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  theme_void() +
+  labs(
+    title = "Spatial Clusters of Diabetes Mortality Crude Rates",
+    subtitle = "Local Indicators of Spatial Association (LISA) Map"
+  ) +
+    theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 20)), 
+      legend.position = "bottom",
+      legend.key.width = unit(1.5, "cm"),
+      legend.title = element_text(size = 10, hjust = 0.5),
+      plot.margin = margin(1, 1, 1, 1, "cm")
+    ) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(LISA_map_cdr)
+
+ggsave("cdr_county_lisa_map.png", LISA_map_cdr, width = 14, height = 10, dpi = 300, units = "in", bg = "white")
+
+# LISA chart
+LISA_Chart <- ggplot(clustering_concept, aes(x = `Crude Rate`, y = crude_rate_lag)) +
+  geom_point(aes(color = LISA_simple, size = significance), alpha = 0.7) +
+  geom_hline(yintercept = mean_val, linetype = "dashed", color = "gray50", size = 0.8) +
+  geom_vline(xintercept = mean_val, linetype = "dashed", color = "gray50", size = 0.8) +
+  
+  # Enhanced titles and labels
+  labs(
+    title = "Moran Scatterplot: Crude Rate vs. Spatial Lag",
+    subtitle = "Local Indicators of Spatial Association (LISA) Chart",
+    x = "Crude Rate (per 100,000)",
+    y = "Spatial Lag of Crude Rate",
+    caption = "Data: CDC, INEGI",
+    color = "LISA Category",
+    size = "Statistical Significance"
+  ) +
+  
+  # Improved color scheme for LISA categories
+  scale_color_manual(
+    name = "LISA Category",
+    values = c(
+      "High-High" = "#d73027",      # Red for hotspots
+      "Low-Low" = "#1a9850",        # Green for coldspots  
+      "High-Low" = "#fdae61",       # Orange for outliers
+      "Low-High" = "#abd9e9",       # Light blue for outliers
+      "Not Significant" = "#969696"  # Gray for non-significant
+    ),
+    labels = c(
+      "High-High" = "High-High (Hotspot)",
+      "Low-Low" = "Low-Low (Coldspot)", 
+      "High-Low" = "High-Low (Outlier)",
+      "Low-High" = "Low-High (Outlier)",
+      "Not Significant" = "Not Significant"
+    )
+  ) +
+  
+  # Improved size scale
+  scale_size_manual(
+    name = "Statistical\nSignificance",
+    values = c("Significant" = 2.5, "Not significant" = 1.2),
+    labels = c("Significant" = "Significant (p ≤ 0.05)", "Not significant" = "Not Significant")
+  ) +
+  
+  # Enhanced theme
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40"),
+    plot.caption = element_text(size = 10, color = "gray50", hjust = 0),
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "gray80", fill = NA, size = 0.5),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10)
+  ) +
+  
+  # Add quadrant labels for interpretation
+  annotate("text", x = Inf, y = Inf, label = "HH", 
+           hjust = 1.2, vjust = 1.2, size = 4, color = "gray60", fontface = "bold") +
+  annotate("text", x = -Inf, y = Inf, label = "LH", 
+           hjust = -0.2, vjust = 1.2, size = 4, color = "gray60", fontface = "bold") +
+  annotate("text", x = -Inf, y = -Inf, label = "LL", 
+           hjust = -0.2, vjust = -0.2, size = 4, color = "gray60", fontface = "bold") +
+  annotate("text", x = Inf, y = -Inf, label = "HL", 
+           hjust = 1.2, vjust = -0.2, size = 4, color = "gray60", fontface = "bold")
+
+# Display the chart
+print(LISA_Chart)
+
+ggsave("LISA_Chart.png", LISA_Chart, width = 14, height = 10, dpi = 300, units = "in", bg = "white")
+
+######################################################################################
+# hotspot map using Getis-Ord statistic
+######################################################################################
+
+cdr_getisrdg_map <-
+ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  geom_sf(data=filtered_data_ct, aes(fill = hotspot), color = "white", size = 0.1) +
+  scale_fill_manual(values = c(
+    "Hot Spot (95%)" = "red",
+    "Hot Spot (80%)" = "orange",
+    "Cold Spot (80%)" = "lightblue", 
+    "Cold Spot (95%)" = "blue",
+    "Not Significant" = "gray"
+  ),  na.value = "white") +
+    # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.3) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "white", color = "black", size= 1, alpha = 0.8) +
+  
+   # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  theme_void() +
+  labs(title = "Spatial Distribution of Hot and Cold Spots Map",
+       subtitle = "Crude Mortality Rate using Getis-Ord statistic",
+       fill = "Hotspot Type"
+       ) + 
+      theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 20)), 
+      legend.position = "bottom",
+      legend.key.width = unit(1.5, "cm"),
+      legend.title = element_text(size = 10, hjust = 0.5),
+      plot.margin = margin(1, 1, 1, 1, "cm"),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
+    ) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+
+print(cdr_getisrdg_map)
+
+ggsave("cdr_getisrdg_map.png", cdr_getisrdg_map, width = 14, height = 10, dpi = 300, units = "in", bg = "white")
+
+######################################################################################
+#Categories of Crude rate
+######################################################################################
+
+# Load the RData file
+load("joined_diabetes_map_county_data.RData")
+
+data<- joined_diabetes_map_county_data
+
+# Filter for border states
+# US border states: California, Arizona, New Mexico, Texas
+# Mexico border states: Baja California, Sonora, Chihuahua, Coahuila, Nuevo León, Tamaulipas
+
+border_states_us <- c("California", "Arizona", "New Mexico", "Texas")
+border_states_mx <- c("Baja California", "Sonora", "Chihuahua", "Coahuila", 
+                      "Nuevo León", "Tamaulipas")
+
+# Filter data for border region
+border_data <- data %>%
+  filter(STATE_NAME %in% c(border_states_us, border_states_mx))
+
+# Create categories for mapping
+border_data <- border_data %>%
+  mutate(
+    # Clean crude rate variable (handle any text/character issues)
+    crude_rate_clean = as.numeric(`Crude Rate`),
+    # Create rate categories (diabetes mortality per 100,000)
+    rate_category = case_when(
+      crude_rate_clean < 25 ~ "< 25 (Low)",
+      crude_rate_clean >= 25 & crude_rate_clean < 50 ~ "25-50 (Moderate)",
+      crude_rate_clean >= 50 & crude_rate_clean < 100 ~ "50-100 (High)",
+      crude_rate_clean >= 100 & crude_rate_clean < 150 ~ "100-150 (Very High)",
+      crude_rate_clean >= 150 ~ "≥ 150 (Extremely High)",
+      TRUE ~ "No Data"
+    ),
+    # Create border status
+    # border_status = ifelse(is_us_border == 1, "Border County", "Non-Border County"),
+    # Country indicator
+    country_clean = case_when(
+      COUNTRY == "US" | COUNTRY == "USA" ~ "United States",
+      COUNTRY == "MX" | COUNTRY == "Mexico" ~ "Mexico",
+      TRUE ~ COUNTRY
+    )
+  )
+
+# Set factor levels for consistent coloring
+border_data$rate_category <- factor(border_data$rate_category, 
+                                   levels = c("(Very Low)", "< 25 (Low)", "25-50 (Moderate)", "50-100 (High)", 
+                                             "100-150 (Very High)", "≥ 150 (Extremely High)", "No Data"))
+
+print(paste("Total counties in border region:", nrow(border_data)))
+print("Summary of crude rates:")
+
+border_data %>%
+  filter(crude_rate_clean != 9999) %>%
+  pull(crude_rate_clean) %>%
+  summary()
+
+# Summary statistics by country and border status
+summary_stats <- border_data %>%
+  st_drop_geometry() %>%
+  filter(!is.na(crude_rate_clean)) %>%
+  group_by(country_clean) %>%
+  summarise(
+    n_counties = n(),
+    mean_rate = round(mean(crude_rate_clean, na.rm = TRUE), 1),
+    median_rate = round(median(crude_rate_clean, na.rm = TRUE), 1),
+    min_rate = round(min(crude_rate_clean, na.rm = TRUE), 1),
+    max_rate = round(max(crude_rate_clean, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+knitr::kable(summary_stats, caption = "Diabetes Mortality Rate Summary by Country")
+
+#| fig-width: 14
+#| fig-height: 10
+
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05) 
+
+# Create the map
+main_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add your diabetes data on top
+  geom_sf(data = border_data, aes(fill = rate_category), color = "white", size = 0.1) +
+  
+  # ADD STATE BOUNDARIES ON TOP - this is the key addition
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.5, alpha = 0.8) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "black", color = "black", size = 1, alpha = 0.8) +
+  
+  # scale_fill_viridis_d(
+  #   name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+  #   option = "plasma",
+  #   direction = -1,
+  #   na.value = "grey90"
+  # ) +
+  
+    scale_fill_manual(
+    name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+    values = c(
+    "< 25 (Low)" = "#fee5d9",
+    "25-50 (Moderate)" = "#fcbba1", 
+    "50-100 (High)" = "#fc9272",
+    "100-150 (Very High)" = "#fb6a4a",
+    "≥ 150 (Extremely High)" = "#de2d26",
+    "No Data" = "#fef5f0"
+    )) +
+  
+  # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Diabetes Mortality Rate by County",
+    subtitle = "US-Mexico Border Region",
+    caption = paste("Data covers", "2018-2023", "| Source: INEGI, CONAPO, CDC")
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm"),
+    plot.margin = margin(1, 1, 1, 1, "cm")
+  ) +
+  
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(main_map)
+
+ggsave("cdr_county_map.png", main_map, width = 14, height = 10, dpi = 300, units = "in", bg = "white")
+
+```
+
+### Age-standardized Mortality Rate
+#### State
+```{r}
+#| label: spatial-clustering
+#| fig-width: 14
+#| fig-height: 10
+
+# State-Level
+```
+
+#### County
+```{r}
+######################################################################################
+# Continue with County-level analysis
+######################################################################################
+
+load("joined_asdmr_map_county_data.RData")
+
+# Advanced spatial analysis for counties
+# Create spatial weights matrix
+filtered_data_ct <- joined_asdmr_map_county_data[!is.na(joined_asdmr_map_county_data$`asmr_per_100k`), ]
+
+coords <- st_coordinates(st_centroid(filtered_data_ct,of_largest_polygon = TRUE))
+nb <- knn2nb(knearneigh(coords, k = 3))
+weights <- nb2listw(nb, style = "W")
+  
+  # Calculate spatial autocorrelation using global Moran's I test
+  moran_test <- moran.test(filtered_data_ct$`asmr_per_100k`, weights, zero.policy = TRUE, na.action = na.omit)
+  
+  print(moran_test)
+
+  
+  # Local indicators of spatial association (LISA)
+  lisa <- localmoran(filtered_data_ct$`asmr_per_100k`, weights, na.action = na.exclude, zero.policy = TRUE)
+  lag_val <- lag.listw(weights, filtered_data_ct$`asmr_per_100k`, zero.policy = TRUE, NAOK = TRUE)
+  mean_val <- mean(filtered_data_ct$`asmr_per_100k`, na.rm = TRUE)
+  
+  # Add results to your spatial data
+filtered_data_ct$local_moran_i <- lisa[, "Ii"]          # Local Moran's I statistic
+filtered_data_ct$local_moran_p <- lisa[, "Pr(z != E(Ii))"]  # p-values
+filtered_data_ct$local_moran_z <- lisa[, "Z.Ii"]       # Z-scores
+
+
+# Create significance categories
+filtered_data_ct$significance <- case_when(
+  filtered_data_ct$local_moran_p <= 0.05 ~ "Significant",
+  TRUE ~ "Not significant"
+)
+
+# Create LISA (Local Indicators of Spatial Association) categories
+# This identifies High-High, Low-Low, High-Low, Low-High clusters
+filtered_data_ct$crude_rate_lag <- lag.listw(weights, filtered_data_ct$`asmr_per_100k`, zero.policy = TRUE)
+filtered_data_ct$crude_rate_mean <- mean(filtered_data_ct$`asmr_per_100k`, na.rm = TRUE)
+filtered_data_ct$crude_rate_lag_mean <- mean(filtered_data_ct$crude_rate_lag, na.rm = TRUE)
+
+filtered_data_ct$lisa_category <- case_when(
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`asmr_per_100k` > filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag > filtered_data_ct$crude_rate_lag_mean ~ "High-High",
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`asmr_per_100k` < filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag < filtered_data_ct$crude_rate_lag_mean ~ "Low-Low",
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`asmr_per_100k` > filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag < filtered_data_ct$crude_rate_lag_mean ~ "High-Low",
+  filtered_data_ct$local_moran_p <= 0.05 & 
+    filtered_data_ct$`asmr_per_100k` < filtered_data_ct$crude_rate_mean & 
+    filtered_data_ct$crude_rate_lag > filtered_data_ct$crude_rate_lag_mean ~ "Low-High",
+  TRUE ~ "Not significant"
+)
+
+# Assign basic cluster type
+  cluster_type <- ifelse(
+    filtered_data_ct$`asmr_per_100k` > mean_val & lag_val > mean_val, "High-High",
+    ifelse(filtered_data_ct$`asmr_per_100k` < mean_val & lag_val < mean_val, "Low-Low",
+    ifelse(filtered_data_ct$`asmr_per_100k` < mean_val & lag_val > mean_val, "Low-High", "High-Low"))
+  )
+  
+# Combine with significance
+  filtered_data_ct$lisa_cluster <- ifelse(
+    lisa[,5] < 0.05,
+    paste0(cluster_type, " (p < 0.05)"),
+    paste0(cluster_type, " (NS)")
+  )
+  
+# Convert to factor
+  filtered_data_ct$lisa_cluster <- as.factor(filtered_data_ct$lisa_cluster)
+  
+# Getis-Ord hot spot analysis
+filtered_data_ct$getis_ord <- localG(filtered_data_ct$`asmr_per_100k`, weights)
+# print(getis_ord)
+
+filtered_data_ct$hotspot <- as.factor(
+  ifelse(filtered_data_ct$getis_ord > 1.96, "Hot Spot (95%)",
+         ifelse(filtered_data_ct$getis_ord > 1.28, "Hot Spot (80%)",
+                ifelse(filtered_data_ct$getis_ord < -1.28, "Cold Spot (80%)",
+                       ifelse(filtered_data_ct$getis_ord < -1.96, "Cold Spot (95%)",
+                              "Not Significant"))))
+)
+
+
+filtered_data_ct <- filtered_data_ct %>%
+  mutate(LISA_simple = case_when(
+    grepl("^High-High.*", lisa_cluster) ~ "High-High",  # Starts with High-High, followed by anything
+    grepl("^Low-Low.*", lisa_cluster) ~ "Low-Low",
+    grepl("^High-Low.*", lisa_cluster) ~ "High-Low",
+    grepl("^Low-High.*", lisa_cluster) ~ "Low-High",
+    TRUE ~ "Not significant"
+  ))
+
+save(filtered_data_ct, file = "filtered_data_ct_asmr.RData")
+
+# Create conceptual clustering visualization
+clustering_concept <- filtered_data_ct %>%
+  mutate(
+    burden_category = case_when(
+      `asmr_per_100k` >= quantile(`asmr_per_100k`, 0.75, na.rm = TRUE) ~ "High Burden",
+      `asmr_per_100k` >= quantile(`asmr_per_100k`, 0.5, na.rm = TRUE) ~ "Moderate-High Burden",
+      `asmr_per_100k` >= quantile(`asmr_per_100k`, 0.25, na.rm = TRUE) ~ "Moderate-Low Burden",
+      TRUE ~ "Low Burden"
+    ),
+    cluster_risk = case_when(
+      COUNTRY == "Mexico" & `asmr_per_100k` > median(`asmr_per_100k`, na.rm = TRUE) ~ "High-Risk Cluster",
+      COUNTRY == "USA" & `asmr_per_100k` < median(`asmr_per_100k`, na.rm = TRUE) ~ "Low-Risk Cluster",
+      TRUE ~ "Mixed Pattern"
+    )
+  )
+
+# Clean problematic characters in county names
+clustering_concept$COUNTY_NAME <- iconv(clustering_concept$COUNTY_NAME, 
+                                       from = "latin1", to = "UTF-8", 
+                                       sub = "")
+# # create plot 
+# clustering_plot <- ggplot(clustering_concept, aes(x = reorder(COUNTY_NAME, `asmr_per_100k`), y = `asmr_per_100k`)) +
+#   geom_col(aes(fill = burden_category), alpha = 0.8) +
+#   geom_text(aes(label = round(`asmr_per_100k`, 0)), hjust = -0.1, size = 3) +
+#   scale_fill_viridis_d(option = "plasma") +
+#   scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +  # Add 15% space on right
+#   coord_flip() +
+#   labs(
+#     title = "Diabetes Mortality Burden Clustering Pattern (2018-2023)",
+#     subtitle = "Identification of high and low burden clusters for targeted intervention",
+#     x = "USA MEXICO Border States",
+#     y = "Prevalence Rate per 100,000",
+#     fill = "Burden Category"
+#   ) +
+#   theme_minimal()
+
+# print(clustering_plot)
+
+
+
+
+# Map 1: Conceptual clustering
+
+# Non-spatial classification - only uses asmr_per_100k values
+# Top 25% = High Burden, Next 25% = Moderate-High, etc.
+
+#| fig-width: 14
+#| fig-height: 10
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05) 
+
+# Color by burden category instead of continuous rate
+asmr_burden_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add your diabetes data on top
+  geom_sf(data = clustering_concept, aes(fill = burden_category), color = "white", size = 0.1) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "white", color = "black", size = 2, alpha = 0.8) +
+    
+  scale_fill_viridis_d(
+    name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+    option = "plasma",
+    direction = -1,
+    na.value = "grey90"
+    ) +
+
+    # Focus on border region
+  coord_sf(
+    xlim = c(-125, -90),  # Adjust longitude range as needed
+    ylim = c(20, 40),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+    
+    labs(title = "Diabetes Mortality Burden Categories",
+         subtitle = "County-level clustering analysis (2018-2023)") +
+    theme_void() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 20)), 
+      legend.position = "bottom",
+      legend.key.width = unit(1.5, "cm"),
+      legend.title = element_text(size = 10, hjust = 0.5),
+      plot.margin = margin(1, 1, 1, 1, "cm")
+    ) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+asmr_burden_map
+# print(burden_map)- ignore this as no Non-spatial and non-statistical classification
+
+######################################################################################
+# LISA: Local Indicator of Spatial Association
+######################################################################################
+
+# LISA map (most informative)
+LISA_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+
+  geom_sf(data=clustering_concept, aes(fill = LISA_simple), color = "white", size = 0.1) +
+  scale_fill_manual(
+    values = c("High-High" = "#d73027",    # Red: High diabetes surrounded by high
+               "Low-Low" = "#4575b4",      # Blue: Low diabetes surrounded by low
+               "High-Low" = "#f46d43",     # Orange: High diabetes surrounded by low
+               "Low-High" = "#74add1",     # Light blue: Low diabetes surrounded by high
+               "Not significant" = "#e0e0e0"), # Gray: Not significant
+    name = "LISA Category"
+  ) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.3) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "black", color = "black", size = 0.5, alpha = 0.8) +
+  
+   # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  theme_void() +
+  labs(
+    title = "Spatial Clusters of Age-Standardized Diabetes Mortality Rate",
+    subtitle = "Local Indicators of Spatial Association (LISA) Map"
+  ) +
+    theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 20)), 
+      legend.position = "bottom",
+      legend.key.width = unit(1.5, "cm"),
+      legend.title = element_text(size = 10, hjust = 0.5),
+      plot.margin = margin(1, 1, 1, 1, "cm"),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
+    ) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(LISA_map)
+
+ggsave("asmr_county_lisa_map.png", LISA_map, width = 14, height = 10, dpi = 300, bg = "white")
+
+######################################
+
+# LISA chart
+LISA_Chart <- ggplot(clustering_concept, aes(x = `asmr_per_100k`, y = crude_rate_lag)) +
+  geom_point(aes(color = LISA_simple, size = significance), alpha = 0.7) +
+  geom_hline(yintercept = mean_val, linetype = "dashed", color = "gray50", size = 0.8) +
+  geom_vline(xintercept = mean_val, linetype = "dashed", color = "gray50", size = 0.8) +
+  
+  # Enhanced titles and labels
+  labs(
+    title = "Moran Scatterplot: ASMR per 100k vs. Spatial Lag",
+    subtitle = "Local Indicators of Spatial Association (LISA) Chart",
+    x = "Age-Standardized Diabetes Mortality Rate (per 100,000)",
+    y = "Spatial Lag of ASMR",
+    caption = "Data: CDC, INEGI",
+    color = "LISA Category",
+    size = "Statistical Significance"
+  ) +
+  
+  # Improved color scheme for LISA categories
+  scale_color_manual(
+    name = "LISA Category",
+    values = c(
+      "High-High" = "#d73027",      # Red for hotspots
+      "Low-Low" = "#1a9850",        # Green for coldspots  
+      "High-Low" = "#fdae61",       # Orange for outliers
+      "Low-High" = "#abd9e9",       # Light blue for outliers
+      "Not Significant" = "#969696"  # Gray for non-significant
+    ),
+    labels = c(
+      "High-High" = "High-High (Hotspot)",
+      "Low-Low" = "Low-Low (Coldspot)", 
+      "High-Low" = "High-Low (Outlier)",
+      "Low-High" = "Low-High (Outlier)",
+      "Not Significant" = "Not Significant"
+    )
+  ) +
+  
+  # Improved size scale
+  scale_size_manual(
+    name = "Statistical\nSignificance",
+    values = c("Significant" = 2.5, "Not significant" = 1.2),
+    labels = c("Significant" = "Significant (p ≤ 0.05)", "Not significant" = "Not Significant")
+  ) +
+  
+  # Enhanced theme
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40"),
+    plot.caption = element_text(size = 10, color = "gray50", hjust = 0),
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "gray80", fill = NA, size = 0.5),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10)
+  ) +
+  
+  # Add quadrant labels for interpretation
+  annotate("text", x = Inf, y = Inf, label = "HH", 
+           hjust = 1.2, vjust = 1.2, size = 4, color = "gray60", fontface = "bold") +
+  annotate("text", x = -Inf, y = Inf, label = "LH", 
+           hjust = -0.2, vjust = 1.2, size = 4, color = "gray60", fontface = "bold") +
+  annotate("text", x = -Inf, y = -Inf, label = "LL", 
+           hjust = -0.2, vjust = -0.2, size = 4, color = "gray60", fontface = "bold") +
+  annotate("text", x = Inf, y = -Inf, label = "HL", 
+           hjust = 1.2, vjust = -0.2, size = 4, color = "gray60", fontface = "bold")
+
+# Display the chart
+print(LISA_Chart)
+
+ggsave("asmr_LISA_Chart.png", LISA_Chart, width = 14, height = 10, dpi = 300, units = "in", bg = "white")
+
+
+######################################################################################
+# hotspot map using Getis-Ord statistic
+######################################################################################
+
+# First, transform your data to lat/lon
+clustering_concept_latlon <- st_transform(clustering_concept, crs = 4326)
+# Verify the new bounds
+cat("New bounds in lat/lon:\n")
+print(st_bbox(clustering_concept_latlon))
+
+getisrdg_map <-
+ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  geom_sf(data=clustering_concept_latlon, aes(fill = hotspot), color = "white", size = 0.1) +
+  scale_fill_manual(values = c(
+    "Hot Spot (95%)" = "red",
+    "Hot Spot (80%)" = "orange",
+    "Cold Spot (80%)" = "lightblue", 
+    "Cold Spot (95%)" = "blue",
+    "Not Significant" = "gray"
+  ),  na.value = "white") +
+    # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.3) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "black", color = "black", size= 0.5, alpha = 0.8) +
+  
+   # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  theme_void() +
+  labs(title = "Spatial Distribution of Hot and Cold Spots Map",
+       subtitle = "Age-Standardized Rate, Getis-Ord statistic",
+       fill = "Hotspot Type"
+       ) + 
+      theme(
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 10, hjust = 0.5, margin = margin(b = 20)), 
+      legend.position = "bottom",
+      legend.key.width = unit(1.5, "cm"),
+      legend.title = element_text(size = 10, hjust = 0.5),
+      plot.margin = margin(1, 1, 1, 1, "cm"),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
+    ) +
+    guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(getisrdg_map)
+
+ggsave("asmr_getisrdg_map.png", getisrdg_map, width = 14, height = 10, dpi = 300, bg = "white")
+
+
+######################################################################################
+#Categories of Age-standardized rate
+######################################################################################
+
+# Load the RData file
+load("joined_asdmr_map_county_data.RData")
+
+data<- joined_asdmr_map_county_data
+
+# Filter for border states
+# US border states: California, Arizona, New Mexico, Texas
+# Mexico border states: Baja California, Sonora, Chihuahua, Coahuila, Nuevo León, Tamaulipas
+
+border_states_us <- c("California", "Arizona", "New Mexico", "Texas")
+border_states_mx <- c("Baja California", "Sonora", "Chihuahua", "Coahuila", 
+                      "Nuevo León", "Tamaulipas")
+
+# Filter data for border region
+border_data <- data %>%
+  filter(STATE_NAME %in% c(border_states_us, border_states_mx))
+
+# Create categories for mapping
+border_data <- border_data %>%
+  mutate(
+    # Clean crude rate variable (handle any text/character issues)
+    asmr_clean = as.numeric(asmr_per_100k),
+    # Create rate categories (diabetes mortality per 100,000)
+    rate_category = case_when(
+      asmr_clean < 25 ~ "< 25 (Low)",
+      asmr_clean >= 25 & asmr_clean < 50 ~ "25-50 (Moderate)",
+      asmr_clean >= 50 & asmr_clean < 100 ~ "50-100 (High)",
+      asmr_clean >= 100 & asmr_clean < 150 ~ "100-150 (Very High)",
+      asmr_clean >= 150 ~ "≥ 150 (Extremely High)",
+      TRUE ~ "No Data"
+    ),
+    # Create border status
+    # border_status = ifelse(is_us_border == 1, "Border County", "Non-Border County"),
+    # Country indicator
+    country_clean = case_when(
+      COUNTRY == "US" | COUNTRY == "USA" ~ "United States",
+      COUNTRY == "MX" | COUNTRY == "Mexico" ~ "Mexico",
+      TRUE ~ COUNTRY
+    )
+  )
+
+# Set factor levels for consistent coloring
+border_data$rate_category <- factor(border_data$rate_category, 
+                                   levels = c("(Very Low)", "< 25 (Low)", "25-50 (Moderate)", "50-100 (High)", 
+                                             "100-150 (Very High)", "≥ 150 (Extremely High)", "No Data"))
+
+print(paste("Total counties in border region:", nrow(border_data)))
+print("Summary of crude rates:")
+
+border_data %>%
+  filter(asmr_clean != 9999) %>%
+  pull(asmr_clean) %>%
+  summary()
+
+# Summary statistics by country and border status
+summary_stats <- border_data %>%
+  st_drop_geometry() %>%
+  filter(!is.na(asmr_clean)) %>%
+  group_by(country_clean) %>%
+  summarise(
+    n_counties = n(),
+    mean_rate = round(mean(asmr_clean, na.rm = TRUE), 1),
+    median_rate = round(median(asmr_clean, na.rm = TRUE), 1),
+    min_rate = round(min(asmr_clean, na.rm = TRUE), 1),
+    max_rate = round(max(asmr_clean, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+knitr::kable(summary_stats, caption = "Age-std Diabetes Mortality Rate Summary by Country")
+
+
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05) 
+
+# Create the map
+asdmr_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add your diabetes data on top
+  geom_sf(data = border_data, aes(fill = rate_category), color = "white", size = 0.1) +
+  
+  # ADD STATE BOUNDARIES ON TOP - this is the key addition
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.5, alpha = 0.8) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = "black", color = "black", size = 0.5, alpha = 0.8) +
+  
+  # scale_fill_viridis_d(
+  #   name = "Diabetes Mortality Rate\n(deaths per 100,000)",
+  #   option = "plasma",
+  #   direction = -1,
+  #   na.value = "grey90"
+  # ) +
+  
+    scale_fill_manual(
+    name = "Age-standardized Diabetes Mortality Rate\n(deaths per 100,000)",
+    values = c(
+    "< 25 (Low)" = "#fee5d9",
+    "25-50 (Moderate)" = "#fcbba1", 
+    "50-100 (High)" = "#fc9272",
+    "100-150 (Very High)" = "#fb6a4a",
+    "≥ 150 (Extremely High)" = "#de2d26",
+    "No Data" = "#fef5f0"
+    )) +
+  
+  # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),  # Adjust longitude range as needed
+    ylim = c(22, 42),     # Adjust latitude range as needed
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Age-standardized Diabetes Mortality Rate by County",
+    subtitle = "US-Mexico Border Region",
+    caption = paste("Data covers", "2018-2023", "| Source: INEGI, CONAPO, CDC")
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5),
+    legend.position = "bottom",
+    legend.key.width = unit(1.0, "cm"),
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1))
+
+print(asdmr_map)
+
+ggsave("asmr_county_map.png", asdmr_map, width = 14, height = 10, dpi = 300, bg = "white")
+
+###############################
+# Jenks Natural Breaks
+###############################
+
+
+# install.packages("classInt")
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(rnaturalearth)
+library(classInt)
+
+# Load the RData file
+load("joined_asdmr_map_county_data.RData")
+data <- joined_asdmr_map_county_data
+
+# Filter for border states
+# US border states: California, Arizona, New Mexico, Texas
+# Mexico border states: Baja California, Sonora, Chihuahua, Coahuila, Nuevo León, Tamaulipas
+
+border_states_us <- c("California", "Arizona", "New Mexico", "Texas")
+border_states_mx <- c("Baja California", "Sonora", "Chihuahua", "Coahuila", 
+                      "Nuevo León", "Tamaulipas")
+
+# Filter data for border region
+border_data <- data %>%
+  filter(STATE_NAME %in% c(border_states_us, border_states_mx))
+
+border_data <- border_data %>%
+  mutate(
+    # Clean ASMR variable (handle any text/character issues)
+    asmr_clean = as.numeric(asmr_per_100k),
+    
+    # Country indicator
+    country_clean = case_when(
+      COUNTRY == "US" | COUNTRY == "USA" ~ "United States",
+      COUNTRY == "MX" | COUNTRY == "Mexico" ~ "Mexico",
+      TRUE ~ COUNTRY
+    )
+  )
+
+print(paste("Total counties/municipalities in border region:", nrow(border_data)))
+print("\n=== Summary of ASMR (Age-Standardized Mortality Rates) ===")
+
+# Summary statistics by country
+summary_stats <- border_data %>%
+  st_drop_geometry() %>%
+  filter(!is.na(asmr_clean) & asmr_clean != 9999) %>%
+  group_by(country_clean) %>%
+  summarise(
+    n_units = n(),
+    mean_rate = round(mean(asmr_clean, na.rm = TRUE), 1),
+    median_rate = round(median(asmr_clean, na.rm = TRUE), 1),
+    sd_rate = round(sd(asmr_clean, na.rm = TRUE), 1),
+    min_rate = round(min(asmr_clean, na.rm = TRUE), 1),
+    max_rate = round(max(asmr_clean, na.rm = TRUE), 1),
+    .groups = "drop"
+  )
+
+print(summary_stats)
+
+print("\n=== Applying Jenks Natural Breaks Classification ===")
+
+# Remove NA and invalid values for classification
+valid_rates <- border_data %>%
+  st_drop_geometry() %>%
+  filter(!is.na(asmr_clean) & asmr_clean != 9999) %>%
+  pull(asmr_clean)
+
+print(paste("Valid rates for classification:", length(valid_rates)))
+
+# Apply Jenks Natural Breaks
+# n = 5 creates 5 classes (adjust as needed: typically 4-7 work well)
+jenks_breaks <- classIntervals(valid_rates, n = 5, style = "jenks")
+
+print("\n=== Jenks Break Points ===")
+print(jenks_breaks$brks)
+
+# Create formatted labels showing the rate ranges
+n_classes <- length(jenks_breaks$brks) - 1
+labels_jenks <- character(n_classes)
+
+for (i in 1:n_classes) {
+  lower <- round(jenks_breaks$brks[i], 1)
+  upper <- round(jenks_breaks$brks[i+1], 1)
+  labels_jenks[i] <- paste0(lower, " - ", upper)
+}
+
+print("\n=== Category Labels ===")
+print(labels_jenks)
+
+# Assign Jenks categories to data
+border_data <- border_data %>%
+  mutate(
+    rate_category = cut(
+      asmr_clean,
+      breaks = c(-Inf, jenks_breaks$brks[-1]),
+      labels = labels_jenks,
+      include.lowest = TRUE
+    ),
+    # Keep original column for reference
+    rate_category_original = case_when(
+      asmr_clean < 25 ~ "< 25 (Low)",
+      asmr_clean >= 25 & asmr_clean < 50 ~ "25-50 (Moderate)",
+      asmr_clean >= 50 & asmr_clean < 100 ~ "50-100 (High)",
+      asmr_clean >= 100 & asmr_clean < 150 ~ "100-150 (Very High)",
+      asmr_clean >= 150 ~ "≥ 150 (Extremely High)",
+      TRUE ~ "No Data"
+    )
+  )
+
+# Verify categorization
+print("\n=== Distribution Across Jenks Categories ===")
+print(table(border_data$rate_category, useNA = "ifany"))
+
+print("\n=== Distribution by Country (Jenks Classification) ===")
+print(table(border_data$country_clean, border_data$rate_category, useNA = "ifany"))
+
+print("\n=== Loading Geographic Data ===")
+
+# Get country boundaries for US and Mexico
+countries <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(admin %in% c("United States of America", "Mexico"))
+
+# Get state/province boundaries for both countries
+states_us <- ne_states(country = "United States of America", returnclass = "sf")
+states_mexico <- ne_states(country = "Mexico", returnclass = "sf")
+
+# Combine state boundaries
+all_states <- rbind(
+  states_us %>% select(name, admin, geometry),
+  states_mexico %>% select(name, admin, geometry)
+)
+
+# Create a more precise border line
+border_line <- st_intersection(
+  st_boundary(countries %>% filter(admin == "United States of America")),
+  st_boundary(countries %>% filter(admin == "Mexico"))
+)
+
+# Create a buffer around the border line
+border_buffer <- st_buffer(border_line, dist = 0.05)
+
+# Create a color palette that matches the number of Jenks classes
+# Using a sequential color scheme (oranges/reds - appropriate for mortality data)
+color_palette <- c(
+  "#fff7f0",  # Very light (low mortality)
+  "#fee5d9",
+  "#fcbba1",
+  "#fc9272",
+  "#fb6a4a",
+  "#de2d26"   # Dark red (high mortality)
+)[1:n_classes]
+
+# Create a named vector for the colors
+colors_named <- setNames(color_palette, labels_jenks)
+
+print("\n=== Color Palette for Jenks Classes ===")
+print(colors_named)
+
+asdmr_map <- ggplot() +
+  # Add country boundaries as base layer
+  geom_sf(data = countries, fill = "white", color = "black", size = 0.5) +
+  
+  # Add state boundaries
+  geom_sf(data = all_states, fill = NA, color = "gray60", size = 0.3) +
+  
+  # Add diabetes data with Jenks classification
+  geom_sf(data = border_data, aes(fill = rate_category), color = "white", size = 0.1) +
+  
+  # Add state boundaries on top for clarity
+  geom_sf(data = all_states, fill = NA, color = "black", size = 0.5, alpha = 0.8) +
+  
+  # Highlighted border
+  geom_sf(data = border_buffer, fill = NA, color = "black", size = 2, alpha = 0.8) +
+  
+  # Apply Jenks-based color scale
+  scale_fill_manual(
+    name = "Age-standardized Diabetes\nMortality Rate\n(deaths per 100,000)",
+    values = colors_named,
+    na.value = "#f5f5f5",
+    drop = FALSE
+  ) +
+  
+  # Focus on border region
+  coord_sf(
+    xlim = c(-125, -92),
+    ylim = c(22, 42),
+    expand = FALSE
+  ) +
+  
+  labs(
+    title = "Age-standardized Diabetes Mortality Rate by County/Municipality",
+    subtitle = "US-Mexico Border Region",
+    caption = paste("Data covers 2018-2023 | Classification: Jenks Natural Breaks | Source: INEGI, CONAPO, CDC WONDER")
+  ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 13, face = "bold", hjust = 0.5, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 11, hjust = 0.5, margin = margin(b = 10)),
+    plot.caption = element_text(size = 8, hjust = 0.5, margin = margin(t = 5), color = "gray40"),
+    legend.position = "bottom",
+    legend.key.width = unit(1.0, "cm"),
+    legend.key.height = unit(0.5, "cm"),
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 10, face = "bold"),
+    legend.margin = margin(t = 10),
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  guides(fill = guide_legend(
+    title.position = "top",
+    title.hjust = 0.5,
+    nrow = 2,
+    label.position = "bottom",
+    label.hjust = 0.5
+  ))
+
+print(asdmr_map)
+
+ggsave("asmr_county_map_jenks.png", 
+       asdmr_map, 
+       width = 10, 
+       height = 7, 
+       dpi = 300, 
+       bg = "white")
+
+print("\n✓ Map saved as 'asmr_county_map_jenks.png'")
+
+
+
+```
+
+
+#### Tables
+```{r}
+
+################################################################################
+# LISA & GETIS-ORD SPATIAL ANALYSIS REPORTING SCRIPT
+# For Diabetes Mortality: US-Mexico Border States
+# 
+# This script extracts counts and complementary statistics from LISA and 
+# Getis-Ord spatial analyses to support publication
+################################################################################
+
+library(tidyverse)
+library(sf)
+library(spdep)
+library(knitr)
+library(kableExtra)
+
+# Assumes you have already run:
+# - filtered_data_ct with spatial analysis results
+# - lisa_category, hotspot, local_moran_i, local_moran_p, getis_ord calculated
+
+################################################################################
+# SECTION 1: LISA CLUSTER COUNTS & SUMMARIES
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 1: LISA CLUSTER ANALYSIS\n")
+cat("========================================\n\n")
+
+# 1.1 Overall LISA counts
+cat("1.1 Overall LISA Category Distribution\n")
+lisa_counts <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(LISA_simple) %>%
+  summarise(
+    n_units = n(),
+    n_significant = sum(significance == "Significant"),
+    percent = round((n() / nrow(filtered_data_ct)) * 100, 2),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(LISA_simple, 
+    levels = c("High-High", "Low-Low", "High-Low", "Low-High", "Not significant")))
+
+print(kable(lisa_counts, 
+  caption = "Distribution of Counties/Municipalities by LISA Cluster Category",
+  format = "simple"))
+
+# 1.2 LISA by country
+cat("\n1.2 LISA Categories by Country\n")
+lisa_by_country <- filtered_data_ct %>%
+  group_by(COUNTRY, LISA_simple) %>%
+  summarise(
+    n_units = n(),
+    percent_within_country = round((n() / nrow(filter(filtered_data_ct, COUNTRY == COUNTRY[1]))) * 100, 2),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = LISA_simple,
+    values_from = n_units,
+    values_fill = 0
+  ) %>%
+  arrange(COUNTRY)
+
+print(kable(lisa_by_country, 
+  caption = "LISA Cluster Distribution by Country",
+  format = "simple"))
+
+# 1.3 LISA by state
+cat("\n1.3 LISA Categories by State\n")
+lisa_by_state <- filtered_data_ct %>%
+  group_by(STATE_NAME, COUNTRY) %>%
+  summarise(
+    Total = n(),
+    `High-High` = sum(LISA_simple == "High-High"),
+    `Low-Low` = sum(LISA_simple == "Low-Low"),
+    `High-Low` = sum(LISA_simple == "High-Low"),
+    `Low-High` = sum(LISA_simple == "Low-High"),
+    `Not Sig.` = sum(LISA_simple == "Not significant"),
+    .groups = "drop"
+  ) %>%
+  arrange(COUNTRY, STATE_NAME)
+
+print(kable(lisa_by_state, 
+  caption = "LISA Cluster Distribution by State",
+  format = "simple"))
+
+################################################################################
+# SECTION 2: GETIS-ORD HOTSPOT COUNTS & SUMMARIES
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 2: GETIS-ORD HOTSPOT ANALYSIS\n")
+cat("========================================\n\n")
+
+# 2.1 Overall Getis-Ord counts
+cat("2.1 Overall Getis-Ord Hotspot Distribution\n")
+hotspot_counts <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(hotspot) %>%
+  summarise(
+    n_units = n(),
+    percent = round((n() / nrow(filtered_data_ct)) * 100, 2),
+    mean_rate = round(mean(`asmr_per_100k`, na.rm = TRUE), 1),
+    median_rate = round(median(`asmr_per_100k`, na.rm = TRUE), 1),
+    sd_rate = round(sd(`asmr_per_100k`, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(hotspot,
+    levels = c("Hot Spot (95%)", "Hot Spot (80%)", "Not Significant", 
+               "Cold Spot (80%)", "Cold Spot (95%)")))
+
+print(kable(hotspot_counts, 
+  caption = "Distribution of Counties/Municipalities by Getis-Ord Hotspot Category",
+  format = "simple"))
+
+# 2.2 Getis-Ord by country
+cat("\n2.2 Getis-Ord Categories by Country\n")
+hotspot_by_country <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(COUNTRY, hotspot) %>%
+  summarise(
+    n_units = n(),
+    percent_within_country = round((n() / nrow(filter(filtered_data_ct, COUNTRY == COUNTRY[1]))) * 100, 2),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = hotspot,
+    values_from = n_units,
+    values_fill = 0
+  )
+
+print(kable(hotspot_by_country, 
+  caption = "Getis-Ord Hotspot Distribution by Country",
+  format = "simple"))
+
+# 2.3 Getis-Ord by state
+cat("\n2.3 Getis-Ord Categories by State\n")
+hotspot_by_state <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(STATE_NAME, COUNTRY) %>%
+  summarise(
+    Total = n(),
+    `Hot (95%)` = sum(hotspot == "Hot Spot (95%)"),
+    `Hot (80%)` = sum(hotspot == "Hot Spot (80%)"),
+    `Not Sig.` = sum(hotspot == "Not Significant"),
+    `Cold (80%)` = sum(hotspot == "Cold Spot (80%)"),
+    `Cold (95%)` = sum(hotspot == "Cold Spot (95%)"),
+    .groups = "drop"
+  ) %>%
+  arrange(COUNTRY, STATE_NAME)
+
+print(kable(hotspot_by_state, 
+  caption = "Getis-Ord Hotspot Distribution by State",
+  format = "simple"))
+
+################################################################################
+# SECTION 3: CROSS-TABULATION: LISA × GETIS-ORD
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 3: CROSS-TABULATION: LISA × GETIS-ORD\n")
+cat("========================================\n\n")
+
+cross_tab <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(lisa_category, hotspot) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = hotspot,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  arrange(factor(lisa_category, 
+    levels = c("High-High", "Low-Low", "High-Low", "Low-High", "Not significant")))
+
+print(kable(cross_tab, 
+  caption = "Cross-Tabulation: LISA Clusters vs Getis-Ord Hotspots",
+  format = "simple"))
+
+################################################################################
+# SECTION 4: GLOBAL SPATIAL AUTOCORRELATION
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 4: GLOBAL SPATIAL AUTOCORRELATION\n")
+cat("========================================\n\n")
+
+# This assumes you already have: moran_test
+# If not, re-run:
+# coords <- st_coordinates(st_centroid(filtered_data_ct, of_largest_polygon = TRUE))
+# nb <- knn2nb(knearneigh(coords, k = 3))
+# weights <- nb2listw(nb, style = "W")
+# moran_test <- moran.test(filtered_data_ct$`Crude Rate`, weights, 
+#                          zero.policy = TRUE, na.action = na.omit)
+
+# Extract Moran's I summary
+moran_summary <- data.frame(
+  Statistic = c("Moran's I", "Expected I", "Variance", "Z-score", "p-value"),
+  Value = c(
+    round(moran_test$estimate[1], 4),
+    round(moran_test$estimate[2], 4),
+    round(moran_test$estimate[3], 4),
+    round((moran_test$estimate[1] - moran_test$estimate[2]) / sqrt(moran_test$estimate[3]), 4),
+    round(moran_test$p.value, 4)
+  )
+)
+
+cat("Global Moran's I Test Results (k=3 nearest neighbors):\n")
+print(kable(moran_summary, format = "simple"))
+cat("\nInterpretation: Moran's I ranges from -1 (perfect dispersion) to +1 (perfect clustering).\n")
+if (moran_test$p.value < 0.05) {
+  cat("Result: Significant positive spatial clustering detected (p < 0.05)\n\n")
+} else {
+  cat("Result: No significant spatial clustering detected (p ≥ 0.05)\n\n")
+}
+
+################################################################################
+# SECTION 5: DESCRIPTIVE STATISTICS BY CLUSTER TYPE
+################################################################################
+
+cat("========================================\n")
+cat("SECTION 5: MORTALITY RATES BY CLUSTER TYPE\n")
+cat("========================================\n\n")
+
+# 5.1 Descriptive stats by LISA category
+cat("5.1 Crude Mortality Rate Statistics by LISA Category\n")
+descriptive_lisa <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(lisa_category) %>%
+  summarise(
+    N = n(),
+    Mean = round(mean(`Crude Rate`, na.rm = TRUE), 1),
+    SD = round(sd(`Crude Rate`, na.rm = TRUE), 1),
+    Median = round(median(`Crude Rate`, na.rm = TRUE), 1),
+    Q1 = round(quantile(`Crude Rate`, 0.25, na.rm = TRUE), 1),
+    Q3 = round(quantile(`Crude Rate`, 0.75, na.rm = TRUE), 1),
+    Min = round(min(`Crude Rate`, na.rm = TRUE), 1),
+    Max = round(max(`Crude Rate`, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(lisa_category, 
+    levels = c("High-High", "Low-Low", "High-Low", "Low-High", "Not significant")))
+
+print(kable(descriptive_lisa, 
+  caption = "Crude Mortality Rate Statistics by LISA Cluster Category (per 100,000)",
+  format = "simple"))
+
+# 5.2 Descriptive stats by Getis-Ord category
+cat("\n5.2 Crude Mortality Rate Statistics by Getis-Ord Category\n")
+descriptive_hotspot <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(hotspot) %>%
+  summarise(
+    N = n(),
+    Mean = round(mean(`Crude Rate`, na.rm = TRUE), 1),
+    SD = round(sd(`Crude Rate`, na.rm = TRUE), 1),
+    Median = round(median(`Crude Rate`, na.rm = TRUE), 1),
+    Q1 = round(quantile(`Crude Rate`, 0.25, na.rm = TRUE), 1),
+    Q3 = round(quantile(`Crude Rate`, 0.75, na.rm = TRUE), 1),
+    Min = round(min(`Crude Rate`, na.rm = TRUE), 1),
+    Max = round(max(`Crude Rate`, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(hotspot,
+    levels = c("Hot Spot (95%)", "Hot Spot (80%)", "Not Significant", 
+               "Cold Spot (80%)", "Cold Spot (95%)")))
+
+print(kable(descriptive_hotspot, 
+  caption = "Crude Mortality Rate Statistics by Getis-Ord Category (per 100,000)",
+  format = "simple"))
+
+################################################################################
+# SECTION 6: LOCAL MORAN'S I STATISTICS
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 6: LOCAL MORAN'S I STATISTICS\n")
+cat("========================================\n\n")
+
+# 6.1 Local Moran's I summary
+local_moran_summary <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  summarise(
+    `N Units` = n(),
+    `Mean Local I` = round(mean(local_moran_i, na.rm = TRUE), 4),
+    `SD Local I` = round(sd(local_moran_i, na.rm = TRUE), 4),
+    `Min Local I` = round(min(local_moran_i, na.rm = TRUE), 4),
+    `Max Local I` = round(max(local_moran_i, na.rm = TRUE), 4),
+    `Sig. p < 0.05 (%)` = paste0(round((sum(local_moran_p < 0.05) / n()) * 100, 1), "%"),
+    `Sig. p < 0.10 (%)` = paste0(round((sum(local_moran_p < 0.10) / n()) * 100, 1), "%")
+  )
+
+cat("Local Moran's I Summary Statistics:\n")
+print(kable(t(local_moran_summary), col.names = "Value", format = "simple"))
+
+# 6.2 Distribution of p-values
+cat("\n6.2 Distribution of Local Moran's I p-values\n")
+pvalue_dist <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  summarise(
+    `p < 0.001` = sum(local_moran_p < 0.001),
+    `0.001-0.01` = sum(local_moran_p >= 0.001 & local_moran_p < 0.01),
+    `0.01-0.05` = sum(local_moran_p >= 0.01 & local_moran_p < 0.05),
+    `0.05-0.10` = sum(local_moran_p >= 0.05 & local_moran_p < 0.10),
+    `p ≥ 0.10` = sum(local_moran_p >= 0.10)
+  )
+
+print(kable(t(pvalue_dist), col.names = "Count", format = "simple"))
+
+################################################################################
+# SECTION 7: GETIS-ORD Gi* Z-SCORE STATISTICS
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 7: GETIS-ORD Gi* Z-SCORE STATISTICS\n")
+cat("========================================\n\n")
+
+getis_ord_summary <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  summarise(
+    `N Units` = n(),
+    `Mean Z-score` = round(mean(getis_ord, na.rm = TRUE), 4),
+    `SD Z-score` = round(sd(getis_ord, na.rm = TRUE), 4),
+    `Min Z-score` = round(min(getis_ord, na.rm = TRUE), 4),
+    `Max Z-score` = round(max(getis_ord, na.rm = TRUE), 4),
+    `Z > 1.96 (Hot 95%)` = sum(getis_ord > 1.96),
+    `1.28 < Z ≤ 1.96 (Hot 80%)` = sum(getis_ord > 1.28 & getis_ord <= 1.96),
+    `-1.28 < Z ≤ 1.28 (Not Sig.)` = sum(getis_ord >= -1.28 & getis_ord <= 1.28),
+    `-1.96 < Z ≤ -1.28 (Cold 80%)` = sum(getis_ord > -1.96 & getis_ord <= -1.28),
+    `Z < -1.96 (Cold 95%)` = sum(getis_ord < -1.96)
+  )
+
+cat("Getis-Ord Gi* Z-score Summary:\n")
+print(kable(t(getis_ord_summary), col.names = "Count", format = "simple"))
+
+################################################################################
+# SECTION 8: US vs MEXICO COMPARISON
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 8: COUNTRY COMPARISON (US vs MEXICO)\n")
+cat("========================================\n\n")
+
+country_comparison <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(COUNTRY) %>%
+  summarise(
+    `N Units` = n(),
+    `Mean Rate` = round(mean(`Crude Rate`, na.rm = TRUE), 1),
+    `Median Rate` = round(median(`Crude Rate`, na.rm = TRUE), 1),
+    `SD Rate` = round(sd(`Crude Rate`, na.rm = TRUE), 1),
+    `High-High (%)` = round((sum(lisa_category == "High-High") / n()) * 100, 1),
+    `Low-Low (%)` = round((sum(lisa_category == "Low-Low") / n()) * 100, 1),
+    `Sig. Clusters (%)` = round((sum(significance == "Significant") / n()) * 100, 1),
+    `Hot Spots (%)` = round((sum(hotspot == "Hot Spot (95%)") / n()) * 100, 1),
+    `Cold Spots (%)` = round((sum(hotspot == "Cold Spot (95%)") / n()) * 100, 1),
+    .groups = "drop"
+  )
+
+print(kable(country_comparison, 
+  caption = "Spatial Clustering Patterns: US vs Mexico Border Regions",
+  format = "simple"))
+
+################################################################################
+# SECTION 9: COMPREHENSIVE SUMMARY TABLE
+################################################################################
+
+cat("\n========================================\n")
+cat("SECTION 9: COMPREHENSIVE SUMMARY TABLE\n")
+cat("========================================\n\n")
+
+comprehensive_summary <- filtered_data_ct %>%
+  st_drop_geometry() %>%
+  group_by(lisa_category) %>%
+  summarise(
+    N = n(),
+    `(%)` = round((n() / nrow(filtered_data_ct)) * 100, 1),
+    `Mean Rate` = round(mean(`Crude Rate`, na.rm = TRUE), 1),
+    `Median Rate` = round(median(`Crude Rate`, na.rm = TRUE), 1),
+    `Range` = paste0(
+      round(min(`Crude Rate`, na.rm = TRUE), 0), "-",
+      round(max(`Crude Rate`, na.rm = TRUE), 0)
+    ),
+    `Sig. p<0.05 (%)` = round((sum(significance == "Significant") / n()) * 100, 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(lisa_category, 
+    levels = c("High-High", "Low-Low", "High-Low", "Low-High", "Not significant")))
+
+print(kable(comprehensive_summary, 
+  caption = "Comprehensive Summary: LISA Clusters, Frequencies, and Mortality Rates",
+  format = "simple"))
+
+################################################################################
+# SECTION 10: KEY FINDINGS SUMMARY
+################################################################################
+
+cat("\n========================================\n")
+cat("KEY FINDINGS SUMMARY\n")
+cat("========================================\n\n")
+
+total_units <- nrow(filtered_data_ct)
+high_high <- sum(filtered_data_ct$lisa_category == "High-High")
+low_low <- sum(filtered_data_ct$lisa_category == "Low-Low")
+significant <- sum(filtered_data_ct$significance == "Significant")
+hot_95 <- sum(filtered_data_ct$hotspot == "Hot Spot (95%)")
+cold_95 <- sum(filtered_data_ct$hotspot == "Cold Spot (95%)")
+
+cat("• Total counties/municipalities:", total_units, "\n")
+cat("• Significant spatial clustering (p < 0.05):", significant, 
+    paste0("(", round(significant/total_units*100, 1), "%)"), "\n")
+cat("• High-High clusters (hotspots):", high_high, 
+    paste0("(", round(high_high/total_units*100, 1), "%)"), "\n")
+cat("• Low-Low clusters (coldspots):", low_low, 
+    paste0("(", round(low_low/total_units*100, 1), "%)"), "\n")
+cat("• Getis-Ord hotspots (95%):", hot_95, 
+    paste0("(", round(hot_95/total_units*100, 1), "%)"), "\n")
+cat("• Getis-Ord coldspots (95%):", cold_95, 
+    paste0("(", round(cold_95/total_units*100, 1), "%)"), "\n")
+
+# Country-specific
+us_high_high <- sum(filtered_data_ct$COUNTRY == "US" & filtered_data_ct$lisa_category == "High-High")
+mx_high_high <- sum(filtered_data_ct$COUNTRY == "MX" & filtered_data_ct$lisa_category == "High-High")
+us_n <- sum(filtered_data_ct$COUNTRY == "US")
+mx_n <- sum(filtered_data_ct$COUNTRY == "MX")
+
+cat("\n• US border: High-High clusters:", us_high_high, 
+    paste0("of", us_n, "units"), "\n")
+cat("• Mexico border: High-High clusters:", mx_high_high, 
+    paste0("of", mx_n, "units"), "\n")
+
+cat("\n========================================\n")
+cat("END OF REPORT\n")
+cat("========================================\n\n")
+
+################################################################################
+# OPTIONAL: Export all tables to Excel workbook
+################################################################################
+
+cat("To export all tables to Excel, uncomment the following code:\n\n")
+cat("# library(writexl)\n")
+cat("# 
+# write_xlsx(
+#   list(
+#     'LISA Counts' = lisa_counts,
+#     'Getis-Ord Counts' = hotspot_counts,
+#     'LISA by Country' = lisa_by_country,
+#     'Hotspot by Country' = hotspot_by_country,
+#     'Comprehensive Summary' = comprehensive_summary,
+#     'Country Comparison' = country_comparison
+#   ),
+#   path = 'Spatial_Analysis_Summary_Tables.xlsx'
+# )\n\n")
+
+
+```
+
+
+

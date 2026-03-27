@@ -1,0 +1,1637 @@
+---
+title: "County-level/Municipality-level Mortality Data"
+author: "Kaustubh Wagh"
+date: "2025-07-25"
+format: html
+execute:
+  echo: true
+  warning: false
+editor: visual
+---
+
+```{r paths-config, include=FALSE}
+# ── Project paths ─────────────────────────────────────────────────────────────
+# All paths are resolved relative to the project root using {here}.
+# Place a blank file named `.here` (or an `.Rproj` file) at the repo root so
+# here::here() always anchors to the same location regardless of where this
+# .qmd file lives within the project.
+
+library(here)
+
+# Raw data
+path_inegi      <- here("data", "raw", "inegi_mexico")
+path_conapo_yr  <- here("data", "raw", "conapo_mexico",
+                        "Population projections by municipals by year 2018-23.csv")
+path_conapo_age <- here("data", "raw", "conapo_mexico",
+                        "Population projections by municipals by age sex group May 27, 2025.csv")
+path_cdc_clean  <- here("data", "raw", "cdc_wonder_usa",
+                        "Multiple Cause of Death 2018-2023 county level 2018-23 cleaned.csv")
+path_cdc_age    <- here("data", "raw", "cdc_wonder_usa",
+                        "Multiple Cause of Death 2018-2023 county level 2018-23 by age groups.csv")
+
+# Shapefiles
+path_shapefiles <- here("data", "external", "shapefiles")
+
+# Processed outputs
+path_proc       <- here("data", "processed")
+```
+
+## Mexico Border States
+
+### Mortality Data
+
+```{r setup1, warning=FALSE, echo==FALSE}
+
+# Mexico Mortality Data Processing Function for Years 2018-2023
+# Author: Processing INEGI mortality data
+# Date: 2025
+
+
+# Load and install required packages
+install_and_load_packages <- function() {
+  packages_needed <- c("sf", "ggplot2", "dplyr", "viridis", "leaflet", 
+                      "DT", "scales", "foreign", "readr", "tools", 
+                      "stringr", "tidyverse", "purrr", "tidyr")
+  
+  for(pkg in packages_needed) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      cat("Installing", pkg, "...\n")
+      install.packages(pkg, dependencies = TRUE)
+    }
+    # Just use library without pos parameter
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Call the function
+install_and_load_packages()
+
+# Define constants
+get_constants <- function() {
+  # Border states (adjust as needed)
+  border_states <- c("02", "05", "08", "19", "26", "28")  # Baja California,  Coahuila, Chihuahua,Nuevo León, Sonora, Tamaulipas
+  
+  # State names mapping (add all states as needed)
+  state_names <- c(
+    "01" = "Aguascalientes", "02" = "Baja California", "03" = "Baja California Sur",
+    "04" = "Campeche", "05" = "Coahuila", "06" = "Colima", "07" = "Chiapas",
+    "08" = "Chihuahua", "09" = "Ciudad de México", "10" = "Durango",
+    "11" = "Guanajuato", "12" = "Guerrero", "13" = "Hidalgo", "14" = "Jalisco",
+    "15" = "México", "16" = "Michoacán", "17" = "Morelos", "18" = "Nayarit",
+    "19" = "Nuevo León", "20" = "Oaxaca", "21" = "Puebla", "22" = "Querétaro",
+    "23" = "Quintana Roo", "24" = "San Luis Potosí", "25" = "Sinaloa",
+    "26" = "Sonora", "27" = "Tabasco", "28" = "Tamaulipas", "29" = "Tlaxcala",
+    "30" = "Veracruz", "31" = "Yucatán", "32" = "Zacatecas"
+  )
+  
+  # Sex labels
+  sex_labels <- c("1" = "Male", "2" = "Female", "9" = "Not specified")
+  
+  return(list(
+    border_states = border_states,
+    state_names = state_names,
+    sex_labels = sex_labels
+  ))
+}
+
+get_age_group_labels <- function() {
+  c(
+    "01" = "Less than 1 year",
+    "02" = "1 year",
+    "03" = "2 years",
+    "04" = "3 years",
+    "05" = "4 years",
+    "06" = "5 to 9 years",
+    "07" = "10 to 14 years",
+    "08" = "15 to 19 years",
+    "09" = "20 to 24 years",
+    "10" = "25 to 29 years",
+    "11" = "30 to 34 years",
+    "12" = "35 to 39 years",
+    "13" = "40 to 44 years",
+    "14" = "45 to 49 years",
+    "15" = "50 to 54 years",
+    "16" = "55 to 59 years",
+    "17" = "60 to 64 years",
+    "18" = "65 to 69 years",
+    "19" = "70 to 74 years",
+    "20" = "75 to 79 years",
+    "21" = "80 to 84 years",
+    "22" = "85 to 89 years",
+    "23" = "90 to 94 years",
+    "24" = "95 to 99 years",
+    "25" = "100 to 104 years",
+    "26" = "105 to 109 years",
+    "27" = "110 to 114 years",
+    "28" = "115 to 119 years",
+    "29" = "120 and over",
+    "30" = "Not specified"
+  )
+}
+
+# Main function to process mortality data for any year
+process_mortality_data <- function(year, base_folder_path) {
+  
+  # Validate year
+  if (!year %in% 2018:2023) {
+    stop("Year must be between 2018 and 2023")
+  }
+  
+  # Install and load packages
+  install_and_load_packages()
+  
+  # Get constants
+  constants <- get_constants()
+  border_states <- constants$border_states
+  state_names <- constants$state_names
+  sex_labels <- constants$sex_labels
+  age_group_labels <- get_age_group_labels()
+  
+  # Convert year to 2-digit format for file naming
+  year_suffix <- sprintf("%02d", year %% 100)
+  
+  # Construct folder path for the specific year
+  folder_path <- file.path(base_folder_path, paste0("defunciones_base_datos_", year, "_dbf"))
+  
+  cat("Processing data for year:", year, "\n")
+  cat("Looking in folder:", folder_path, "\n")
+  
+  # Check if folder exists
+  if (!dir.exists(folder_path)) {
+    stop(paste("Folder does not exist:", folder_path))
+  }
+  
+  # List all .dbf files in the folder
+  dbf_files <- list.files(path = folder_path, pattern = "\\.dbf$", full.names = TRUE)
+  
+  if (length(dbf_files) == 0) {
+    stop(paste("No .dbf files found in:", folder_path))
+  }
+  
+  cat("Found", length(dbf_files), ".dbf files\n")
+  
+  # Read all dbf files into a named list of data frames
+  dbf_data_list <- lapply(dbf_files, function(file) {
+    cat("Reading:", basename(file), "\n")
+    tryCatch({
+      st_read(file, options = c("ENCODING=UTF-8"), quiet = TRUE)
+    }, error = function(e) {
+      cat("Error reading", basename(file), ":", e$message, "\n")
+      return(NULL)
+    })
+  })
+  
+  # Remove NULL entries (failed reads)
+  dbf_data_list <- dbf_data_list[!sapply(dbf_data_list, is.null)]
+  
+  # Name the list elements
+  names(dbf_data_list) <- tools::file_path_sans_ext(basename(dbf_files[!sapply(dbf_data_list, is.null)]))
+  
+  # Extract datasets with year-specific naming
+  defun_name <- paste0("DEFUN", year_suffix)
+  catminde_name <- paste0("CATMINDE", year_suffix)  # Note: might just be "CATMINDE"
+  listamex_name <- paste0("LISTAMEX", year_suffix)  # Note: might just be "LISTAMEX"
+  catemlde_name <- paste0("CATEMLDE", year_suffix)
+  capgpo_name <- paste0("CAPGPO", year_suffix)
+  
+  # Try different naming conventions
+  possible_defun_names <- c(defun_name, paste0("DEFUN", year), "DEFUN")
+  possible_catemlde_names <- c(catemlde_name, paste0("CATEMLDE", year), "CATEMLDE")
+  
+  DEFUN <- NULL
+  for (name in possible_defun_names) {
+    if (name %in% names(dbf_data_list)) {
+      DEFUN <- dbf_data_list[[name]]
+      cat("Using DEFUN dataset:", name, "\n")
+      break
+    }
+  }
+  
+  CATEMLDE <- NULL
+  for (name in possible_catemlde_names) {
+    if (name %in% names(dbf_data_list)) {
+      CATEMLDE <- dbf_data_list[[name]]
+      cat("Using CATEMLDE dataset:", name, "\n")
+      break
+    }
+  }
+  
+  if (is.null(DEFUN)) {
+    stop("Could not find DEFUN dataset. Available datasets: ", paste(names(dbf_data_list), collapse = ", "))
+  }
+  
+  if (is.null(CATEMLDE)) {
+    warning("Could not find CATEMLDE dataset. Municipality names will not be available.")
+  }
+  
+  # -------------------------------
+  # Filter DEFUN for diabetes (20D, 43I) in border states
+  # -------------------------------
+  cat("Filtering data for diabetes cases in border states...\n")
+  
+  selected_data <- DEFUN %>%
+    filter(
+      LISTA_MEX %in% c("20D", "43I"),
+      ENT_RESID %in% border_states
+    )
+  
+  cat("Found", nrow(selected_data), "diabetes deaths in border states\n")
+  
+  # -------------------------------
+  # Merge occupation descriptions (if available)
+  # -------------------------------
+  if ("OCUPACIONES" %in% names(dbf_data_list)) {
+    selected_data <- selected_data %>%
+      left_join(dbf_data_list[["OCUPACIONES"]], by = c("OCUPACION" = "CVE")) %>%
+      rename(DESCRIP_OCUP = DESCRIP)
+    cat("Added occupation descriptions\n")
+  }
+  
+  # -------------------------------
+  # Map codes to names
+  # -------------------------------
+  selected_data <- selected_data %>%
+    mutate(
+      STATE_NAME = state_names[as.character(ENT_RESID)],
+      SEX_NAME = sex_labels[as.character(SEXO)],
+       # keep EDAD_AGRU exactly as in microdata, but also add a readable label
+    AGE_GROUP  = sprintf("%02d", as.integer(EDAD_AGRU)),
+    AGE_GROUP_LABEL = dplyr::coalesce(get_age_group_labels()[AGE_GROUP], "Not specified"),
+    AGE_GROUP_LABEL = factor(AGE_GROUP_LABEL, levels = get_age_group_labels()) 
+    )
+  
+  # -------------------------------
+  # Merge municipality names (if CATEMLDE is available)
+  # -------------------------------
+  if (!is.null(CATEMLDE)) {
+    cat("Processing municipality data...\n")
+    
+    # Deduplicate CATEMLDE
+    CATEMLDE_dedup <- CATEMLDE %>%
+      distinct(CVE_ENT, CVE_MUN, .keep_all = TRUE)
+    
+    # Create municipality catalog
+    municipality_catalog <- CATEMLDE_dedup %>%
+      select(CVE_ENT, CVE_MUN, NOM_LOC) %>%
+      distinct() %>% 
+      filter(CVE_ENT %in% border_states) %>%
+      filter(!CVE_MUN %in% c("000", "999"))
+    
+    # Create state lookup table
+    state_lookup <- selected_data %>%
+      select(ENT_RESID, STATE_NAME) %>%
+      distinct()
+    
+    # Add state names to municipality_catalog
+    municipality_catalog <- municipality_catalog %>%
+      left_join(state_lookup, by = c("CVE_ENT" = "ENT_RESID"))
+    
+    # Merge with selected_data
+    selected_data <- municipality_catalog %>%
+      left_join(
+        selected_data,
+        by = c("STATE_NAME", "CVE_ENT" = "ENT_RESID", "CVE_MUN" = "MUN_RESID")
+      ) %>%
+      rename(
+        ENT_RESID = CVE_ENT,
+        MUN_RESID = CVE_MUN,
+        MUNICIPALITY_NAME = NOM_LOC
+      )
+  } else {
+    # If no municipality data, create placeholder
+    selected_data <- selected_data %>%
+      mutate(MUNICIPALITY_NAME = paste("Municipality", MUN_RESID))
+  }
+  
+  # -------------------------------
+  # Summarize data
+  # -------------------------------
+  cat("Creating summary tables...\n")
+  
+  # Total by municipality
+  municipality_totals <- selected_data %>%
+    group_by(ENT_RESID, MUN_RESID) %>%
+    summarise(
+      total_deaths = sum(LISTA_MEX %in% c("20D", "43I"), na.rm = TRUE),
+      STATE_NAME = first(STATE_NAME),
+      MUNICIPALITY_NAME = first(MUNICIPALITY_NAME),
+      .groups = "drop"
+    ) %>%
+    select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, total_deaths) %>%
+    arrange(STATE_NAME, ENT_RESID, MUN_RESID, MUNICIPALITY_NAME, desc(total_deaths))
+  
+  # Total by key demographic breakdowns
+  summary_table <- selected_data %>%
+    group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, SEXO, AGE_GROUP) %>%
+    summarise(
+      total_deaths = sum(LISTA_MEX %in% c("20D", "43I"), na.rm = TRUE),
+      .groups = "drop" 
+    ) %>%
+    select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, SEXO, AGE_GROUP, total_deaths) %>%
+    arrange(STATE_NAME, MUNICIPALITY_NAME, desc(total_deaths))
+  
+  summary_table2 <- selected_data %>%
+    group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID) %>%
+    summarise(
+      total_deaths = sum(LISTA_MEX %in% c("20D", "43I"), na.rm = TRUE),
+      .groups = "drop" 
+    ) %>%
+    select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, total_deaths) %>%
+    arrange(STATE_NAME, MUNICIPALITY_NAME, desc(total_deaths))
+  # NEW: Totals by age group (state/mun)
+    age_group_totals <- selected_data %>%
+      group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, AGE_GROUP, AGE_GROUP_LABEL) %>%
+      summarise(
+        total_deaths = sum(LISTA_MEX %in% c("20D", "43I"), na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      arrange(STATE_NAME, MUNICIPALITY_NAME, AGE_GROUP)
+    
+    # NEW: Totals by age group & sex (state/mun)
+    age_sex_totals <- selected_data %>%
+      group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, AGE_GROUP, AGE_GROUP_LABEL, SEXO, SEX_NAME) %>%
+      summarise(
+        total_deaths = sum(LISTA_MEX %in% c("20D", "43I"), na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      arrange(STATE_NAME, MUNICIPALITY_NAME, AGE_GROUP, SEXO)
+    
+    # NEW: Totals by Municipality & Sex (without age breakdown)
+    mun_sex_totals <- selected_data %>%
+      mutate(YEAR = year) %>%
+      group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, SEXO, SEX_NAME, YEAR) %>%
+      summarise(
+        total_deaths = sum(LISTA_MEX %in% c("20D", "43I"), na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      arrange(STATE_NAME, MUNICIPALITY_NAME, YEAR, SEXO)
+  
+  # Return results
+  results <- list(
+    year = year,
+    raw_data = selected_data,
+    municipality_totals = municipality_totals,
+    summary_table = summary_table,
+    age_group_totals = age_group_totals, # NEW
+    age_sex_totals = age_sex_totals,     # NEW
+    mun_sex_totals = mun_sex_totals,     # NEW
+    datasets_found = names(dbf_data_list)
+  )
+  
+  cat("Processing completed for year", year, "\n")
+  cat("Total diabetes deaths found:", sum(municipality_totals$total_deaths), "\n")
+  
+  return(results)
+}
+
+# Convenience function to process multiple years
+process_multiple_years <- function(years, base_folder_path) {
+  results_list <- list()
+  
+  for (year in years) {
+    cat("\n", strrep("=", 50), "\n")
+    cat("Processing year:", year, "\n")
+    cat(strrep("=", 50), "\n")
+    
+    tryCatch({
+      results_list[[as.character(year)]] <- process_mortality_data(year, base_folder_path)
+    }, error = function(e) {
+      cat("Error processing year", year, ":", e$message, "\n")
+      results_list[[as.character(year)]] <- NULL
+    })
+  }
+  
+  return(results_list)
+}
+
+
+# Process single year
+base_path <- path_inegi
+# result_2023 <- process_mortality_data(2023, base_path)
+# 
+# result_2018 <- process_mortality_data(2018, base_path)
+# result_2019 <- process_mortality_data(2019, base_path)
+
+# Process multiple years
+results_all <- process_multiple_years(2018:2023, base_path)
+
+```
+
+Age groups mgmt
+
+```{r datamgmt, warning=FALSE, echo==FALSE}
+
+# Access results
+# municipality_totals_2023 <- result_2023$municipality_totals
+# summary_table_2023 <- result_2023$summary_table
+# age_group_totals_2023 <- result_2023$age_group_totals
+# age_sex_totals_2023 <- result_2023$age_sex_totals
+# 
+# municipality_totals_2018 <- result_2018$municipality_totals
+# 
+# municipality_totals_2019 <- result_2019$municipality_totals
+
+
+# Compare across years
+for (year in names(results_all)) {
+  if (!is.null(results_all[[year]])) {
+    total_deaths <- sum(results_all[[year]]$municipality_totals$total_deaths)
+    cat("Year", year, ": Total diabetes deaths =", total_deaths, "\n")
+  }
+}
+
+.parse_year <- function(x) as.integer(stringr::str_extract(x, "\\d{4}"))
+
+# LONG format
+age_mun_year_long <- names(results_all) %>%
+  map_dfr(function(nm) {
+    res <- results_all[[nm]]
+    if (is.null(res) || is.null(res$age_group_totals)) return(NULL)
+    yr <- .parse_year(nm)
+    res$age_group_totals %>%
+      mutate(year = yr) %>%
+      select(year, ENT_RESID, MUN_RESID, STATE_NAME, MUNICIPALITY_NAME,
+             AGE_GROUP_LABEL, total_deaths)
+  })
+
+# age_mun_year_long %>%
+#   count(ENT_RESID, MUN_RESID, STATE_NAME, MUNICIPALITY_NAME, AGE_GROUP_LABEL, year) %>%
+#   filter(n > 1) %>%
+#   arrange(desc(n))
+
+name_lookup <- age_mun_year_long %>%
+  group_by(ENT_RESID, MUN_RESID) %>%
+  summarise(
+    STATE_NAME        = first(STATE_NAME[!is.na(STATE_NAME) & STATE_NAME != ""]),
+    MUNICIPALITY_NAME = first(MUNICIPALITY_NAME[!is.na(MUNICIPALITY_NAME) & MUNICIPALITY_NAME != ""]),
+    .groups = "drop"
+  )
+
+# Join back to long dataset, overwriting names
+age_mun_year_long_std <- age_mun_year_long %>%
+  select(-STATE_NAME, -MUNICIPALITY_NAME) %>%
+  left_join(name_lookup, by = c("ENT_RESID", "MUN_RESID"))
+
+# age_mun_year_long_std %>% 
+#    count(ENT_RESID, MUN_RESID, AGE_GROUP_LABEL) %>%
+#   filter(n > 1)
+
+# WIDE format
+age_mun_year_wide <- age_mun_year_long_std %>%
+  mutate(
+    AGE_GROUP_LABEL = stringr::str_squish(AGE_GROUP_LABEL),
+    MUNICIPALITY_NAME = stringr::str_squish(MUNICIPALITY_NAME),
+    STATE_NAME = stringr::str_squish(STATE_NAME)
+  ) %>%
+  pivot_wider(
+    names_from = year,
+    names_prefix = "deaths_",
+    values_from = total_deaths,
+    values_fill = 0,
+    values_fn = list(total_deaths = ~sum(.x, na.rm = TRUE))  # <- collapse duplicates
+  ) %>%
+  arrange(STATE_NAME, MUNICIPALITY_NAME, AGE_GROUP_LABEL) %>%
+  mutate(total_2018_2023 = rowSums(across(starts_with("deaths_")), na.rm = TRUE))
+
+# age_mun_year_wide %>% 
+#    count(ENT_RESID, MUN_RESID, AGE_GROUP_LABEL) %>%
+#   filter(n > 1)
+
+# Process data for years 2018-2023
+years <- 2018:2023
+
+# Extract municipality totals for each year
+municipality_data_list <- lapply(names(results_all), function(result_name) {
+  year <- gsub("result_", "", result_name)
+  data <- results_all[[result_name]]$municipality_totals
+  data$year <- as.numeric(year)
+  return(data)
+})
+
+
+# Combine all years into one dataset
+combined_municipality_data <- bind_rows(municipality_data_list)
+
+# Sum data across all years by municipality
+# Assuming you want to sum numeric columns and keep municipality identifiers
+municipality_totals_all_years <- combined_municipality_data %>%
+  group_by(ENT_RESID, MUN_RESID) %>%
+  summarise(
+    STATE_NAME = first(STATE_NAME),
+    MUNICIPALITY_NAME = first(MUNICIPALITY_NAME),
+    # Keep deaths as separate columns by year
+    deaths_2018 = sum(total_deaths[year == 2018], na.rm = TRUE),
+    deaths_2019 = sum(total_deaths[year == 2019], na.rm = TRUE),
+    deaths_2020 = sum(total_deaths[year == 2020], na.rm = TRUE),
+    deaths_2021 = sum(total_deaths[year == 2021], na.rm = TRUE),
+    deaths_2022 = sum(total_deaths[year == 2022], na.rm = TRUE),
+    deaths_2023 = sum(total_deaths[year == 2023], na.rm = TRUE),
+    # Sum other numeric columns
+    across(where(is.numeric) & !matches("year"), sum, na.rm = TRUE),
+    years_covered = paste(sort(unique(year)), collapse = ", "),
+    n_years = n_distinct(year),
+    .groups = "drop"
+  )
+
+# collapse >=85+ years inot single age group 
+age_mun_year_wide_collapsed <- age_mun_year_long_std %>%
+    # drop missing labels first
+  filter(!is.na(AGE_GROUP_LABEL)) %>%
+  mutate(
+    AGE_GROUP_COLLAPSED = case_when(
+      AGE_GROUP_LABEL %in% c("85 to 89 years",
+                             "90 to 94 years",
+                             "95 to 99 years",
+                             "100 to 104 years",
+                             "105 to 109 years",
+                             "110 to 114 years",
+                             "115 to 119 years",
+                             "120 and over",
+                             "Not specified") ~ "85+ years",
+      TRUE ~ as.character(AGE_GROUP_LABEL)
+    )
+  ) %>%
+  group_by(ENT_RESID, MUN_RESID, STATE_NAME, MUNICIPALITY_NAME,
+           AGE_GROUP_COLLAPSED, year) %>%
+  summarise(total_deaths = sum(total_deaths, na.rm = TRUE), .groups = "drop") %>%
+  mutate(year_col = paste0("deaths_", year)) %>%
+  select(ENT_RESID, MUN_RESID, STATE_NAME, MUNICIPALITY_NAME,
+         AGE_GROUP_COLLAPSED, year_col, total_deaths) %>%
+  tidyr::pivot_wider(names_from = year_col,
+                     values_from = total_deaths,
+                     values_fill = 0) %>%
+  arrange(STATE_NAME, MUNICIPALITY_NAME, AGE_GROUP_COLLAPSED) %>%
+  mutate(total_mor_2018_2023 = rowSums(across(starts_with("deaths_")), na.rm = TRUE))
+
+# age_mun_year_wide_collapsed %>% 
+#    count(ENT_RESID, MUN_RESID, AGE_GROUP_COLLAPSED) %>%
+#   filter(n > 1)
+
+age_mun_year_wide_collapsed
+
+save(age_mun_year_wide_collapsed, file = "age_mun_year_mor_wide_mx.RData")
+
+```
+
+### Population Data
+
+Overall
+
+```{r setup2, warning=FALSE, echo==FALSE}
+
+# Import the population CSV file
+population_data <- read_csv(path_conapo_yr)
+
+# Check the structure of the imported data
+glimpse(population_data)
+
+# Rename variables 
+population_data <- population_data %>%
+  rename(
+    STATE_NAME = NOM_ENT,
+    MUNICIPALITY_NAME = NOM_MUN,
+    SEX = SEXO,
+    Year = ANO,
+    Population = POB_TOTAL
+  )
+
+# Display the renamed data structure
+glimpse(population_data)
+
+# Collapse sex and year data to get total population per municipality
+municipality_pop_totals <- population_data %>%
+  group_by(CLAVE, CLAVE_ENT, STATE_NAME, MUNICIPALITY_NAME) %>%
+  summarise(
+    # Population by individual years
+    Population_2018 = sum(Population[Year == 2018], na.rm = TRUE),
+    Population_2019 = sum(Population[Year == 2019], na.rm = TRUE),
+    Population_2020 = sum(Population[Year == 2020], na.rm = TRUE),
+    Population_2021 = sum(Population[Year == 2021], na.rm = TRUE),
+    Population_2022 = sum(Population[Year == 2022], na.rm = TRUE),
+    Population_2023 = sum(Population[Year == 2023], na.rm = TRUE),
+    # Total population across all years
+    Total_Population = sum(Population, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # ENT_RESID: Add leading zero if single digit
+    ENT_RESID = sprintf("%02d", CLAVE_ENT),
+    # MUN_RESID: Extract last three digits of CLAVE
+    MUN_RESID = sprintf("%03d", CLAVE %% 1000)
+  )
+
+# Display the first few rows of the collapsed data
+head(municipality_pop_totals)
+
+```
+
+Age group mgmt
+
+```{r popmgmt}
+
+infile <- path_conapo_age
+
+raw <- readr::read_csv(infile, show_col_types = FALSE)
+
+dataset_tidy <- raw %>%
+  # 1) Rename
+  rename(
+    STATE_NAME        = NOM_ENT,
+    MUNICIPALITY_NAME = NOM_MUN,
+    SEX               = SEXO,
+    Year              = ANO,
+    Population        = POB_TOTAL
+  ) %>%
+  # 2) Drop fecha if present
+  select(-any_of("fecha")) %>%
+  # 3) Standardize codes
+  mutate(
+    ENT_RESID = sprintf("%02d", CLAVE_ENT),
+    MUN_RESID = sprintf("%03d", CLAVE %% 1000)
+  ) %>%
+  # 4) Pivot longer for age groups
+  pivot_longer(
+    cols = starts_with("POB_"),
+    names_to  = "Age_Group_raw",
+    values_to = "Population_AgeGroup"
+  ) %>%
+  mutate(
+    Age_Groups = case_when(
+      str_detect(Age_Group_raw, "_mm$") ~ {
+        start_age <- str_extract(Age_Group_raw, "(?<=^POB_)\\d+")
+        paste0(as.integer(start_age), "+ years")
+      },
+      str_detect(Age_Group_raw, "^POB_\\d+_\\d+$") ~ {
+        mm <- str_match(Age_Group_raw, "^POB_(\\d+)_(\\d+)$")
+        paste0(as.integer(mm[, 2]), " to ", as.integer(mm[, 3]), " years")
+      },
+      TRUE ~ Age_Group_raw
+    )
+  ) %>%
+  # 5) Pivot wider: years as columns
+  pivot_wider(
+    id_cols = c(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, SEX, Age_Groups),
+    names_from  = Year,
+    values_from = Population_AgeGroup,
+    names_prefix = "Pop_"
+  ) %>%
+  # 6) Collapse across sexes (sum M + F)
+  group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, Age_Groups) %>%
+  summarise(across(starts_with("Pop_"), sum, na.rm = TRUE), .groups = "drop") %>%
+  # 7) Keep only 2018–2023
+  select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, Age_Groups,
+         Pop_2018:Pop_2023) %>% 
+  mutate(Total_pop_2018_2023 = rowSums(across(Pop_2018:Pop_2023), na.rm = TRUE))
+
+save(dataset_tidy, file = "age_mun_year_pop_wide_mx.RData")
+
+
+```
+
+### Crude Mortality Rate: Mexico
+
+```{r CDR, warning=FALSE, echo==FALSE}
+
+# Merge the population and Mortality datasets by ENT_RESID and MUN_RESID
+Mexico_dm_mor_data <- municipality_totals_all_years %>%
+  left_join(municipality_pop_totals %>% 
+              select(-STATE_NAME, -MUNICIPALITY_NAME), 
+            by = c("ENT_RESID", "MUN_RESID"))
+
+
+# Assuming there's a deaths column in one of your datasets
+Mexico_dm_mor_data <- Mexico_dm_mor_data %>%
+  mutate(
+    # Calculate crude death rate per 100,000
+    Crude_Death_Rate = (total_deaths / Total_Population) * 100000,
+    
+    # Calculate 95% CI using Poisson distribution
+    # Standard error for rate
+    SE_rate = sqrt(total_deaths) / Total_Population * 100000,
+    
+    # 95% CI bounds
+    CDR_Lower_CI = Crude_Death_Rate - 1.96 * SE_rate,
+    CDR_Upper_CI = Crude_Death_Rate + 1.96 * SE_rate,
+    
+    # Alternative method using exact Poisson CI (more accurate for small counts)
+    CDR_Lower_CI_Exact = qpois(0.025, total_deaths) / Total_Population * 100000,
+    CDR_Upper_CI_Exact = qpois(0.975, total_deaths + 1) / Total_Population * 100000
+  )
+
+# Display summary of the calculated rates
+summary(Mexico_dm_mor_data$Crude_Death_Rate)
+
+# Display first few rows with the new calculated variables
+head(Mexico_dm_mor_data %>% select(STATE_NAME, MUNICIPALITY_NAME, total_deaths, Total_Population, Crude_Death_Rate, CDR_Lower_CI, CDR_Upper_CI))
+
+# Save as RData file (could save multiple objects) - Recommended for R
+save(Mexico_dm_mor_data, file = "Mexico_dm_mor_data.RData")
+
+```
+
+### Mortality by Sex: Mexico
+
+```{r combine_sex_stratified_years}
+
+# Combine sex-stratified mortality data across all years (2018-2023)
+combined_mun_sex_year <- bind_rows(
+  lapply(names(results_all), function(year_name) {
+    if (!is.null(results_all[[year_name]]) && 
+        !is.null(results_all[[year_name]]$mun_sex_totals)) {
+      results_all[[year_name]]$mun_sex_totals
+    }
+  })
+) %>%
+  arrange(STATE_NAME, MUNICIPALITY_NAME, YEAR, SEXO)
+
+# View sample data
+cat("\n=== Combined Sex-Stratified Mortality Data ===\n")
+head(combined_mun_sex_year, 20)
+
+# Summary statistics
+cat("\nTotal records:", nrow(combined_mun_sex_year), "\n")
+cat("Years covered:", min(combined_mun_sex_year$YEAR), "-", max(combined_mun_sex_year$YEAR), "\n")
+cat("Unique states:", n_distinct(combined_mun_sex_year$STATE_NAME), "\n")
+cat("Unique municipalities:", n_distinct(combined_mun_sex_year$MUNICIPALITY_NAME), "\n")
+cat("Sex categories:", unique(combined_mun_sex_year$SEX_NAME), "\n")
+
+# ========================================================================
+# PREPARE POPULATION DATA BY SEX & YEAR
+# ========================================================================
+
+# Read the detailed population data by sex and year
+# This is your CONAPO data with sex stratification
+infile_pop_sex <- path_conapo_yr
+
+
+population_data_by_sex <- read_csv(infile_pop_sex, show_col_types = FALSE) %>%
+  rename(
+    STATE_NAME = NOM_ENT,
+    MUNICIPALITY_NAME = NOM_MUN,
+    SEX = SEXO,
+    YEAR = ANO,
+    Population = POB_TOTAL,
+    ENT_RESID = CLAVE_ENT
+  ) %>%
+  # Map sex codes to labels
+  mutate(
+    SEX_NAME = case_when(
+      SEX == "HOMBRES" ~ "Male",
+      SEX == "MUJERES" ~ "Female",
+      TRUE ~ as.character(SEX)
+    ),
+    # Standardize codes
+    ENT_RESID = sprintf("%02d", as.numeric(ENT_RESID)),
+    MUN_RESID = sprintf("%03d", as.numeric(CLAVE) %% 1000)
+  ) %>%
+  select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, YEAR, SEX, SEX_NAME, Population) %>%
+  arrange( ENT_RESID, MUN_RESID,YEAR, SEX_NAME )
+
+cat("\n=== Population Data by Sex & Year ===\n")
+head(population_data_by_sex, 20)
+cat("\nTotal rows:", nrow(population_data_by_sex), "\n")
+
+# Create wide format: population by year for each municipality-sex combination
+pop_wide <- population_data_by_sex %>%
+  pivot_wider(
+    id_cols = c(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID,MUN_RESID, SEX_NAME),
+    names_from = YEAR,
+    names_prefix = "Pop_",
+    values_from = Population,
+    values_fill = 0
+  ) %>%
+  mutate(
+    Pop_2018_2023 = Pop_2018 + Pop_2019 + Pop_2020 + Pop_2021 + Pop_2022 + Pop_2023
+  ) %>%
+  arrange(STATE_NAME, MUNICIPALITY_NAME, SEX_NAME)
+
+head(pop_wide, 10)
+
+write.csv(pop_wide,
+          "pop_wide_year_2018-2023.csv",
+          row.names = FALSE)
+
+# ========================================================================
+# CALCULATE CRUDE MORTALITY RATES BY SEX BY YEAR
+# ========================================================================
+
+# ========== STEP 1: Prepare mortality data for rate calculation ==========
+
+# Aggregate mortality by sex and year (across all years in combined data)
+mortality_sex_year <- combined_mun_sex_year %>%
+  rename(SEX_NAME = SEX_NAME) %>%
+  select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, YEAR, SEX_NAME, total_deaths) %>%
+  arrange(ENT_RESID, MUN_RESID, YEAR, SEX_NAME)
+
+# ========== STEP 2: Join mortality with population data ==========
+
+# Create mortality-population dataset
+mortality_pop_sex_year <- mortality_sex_year %>%
+  left_join(
+    population_data_by_sex %>% select(ENT_RESID, MUN_RESID, YEAR, SEX_NAME, Population),
+    by = c("ENT_RESID", "MUN_RESID", "YEAR", "SEX_NAME"  )
+  ) %>%
+  # Handle missing population values
+  mutate(
+    Population = ifelse(is.na(Population), 0, Population),
+    # Calculate crude mortality rate per 100,000
+    CMR = ifelse(Population > 0, (total_deaths / Population) * 100000, NA)
+  ) %>% 
+  select(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID, YEAR, SEX_NAME, total_deaths, Population, CMR)
+
+cat("\n=== CRUDE MORTALITY RATES BY MUNICIPALITY, SEX, AND YEAR ===\n")
+head(mortality_pop_sex_year, 30)
+
+# Summary statistics
+cat("\n=== CMR Summary Statistics ===\n")
+mortality_pop_sex_year %>%
+  filter(!is.na(CMR) & CMR != 0) %>%
+  summarise(
+    Mean_CMR = mean(CMR, na.rm = TRUE),
+    Median_CMR = median(CMR, na.rm = TRUE),
+    Min_CMR = min(CMR, na.rm = TRUE),
+    Max_CMR = max(CMR, na.rm = TRUE),
+    SD_CMR = sd(CMR, na.rm = TRUE)
+  ) %>%
+  print()
+
+# By sex
+cat("\n=== CMR Summary by Sex ===\n")
+mortality_pop_sex_year %>%
+  filter(!is.na(CMR) & CMR != 0) %>%
+  group_by(SEX_NAME) %>%
+  summarise(
+    Mean_CMR = mean(CMR, na.rm = TRUE),
+    Median_CMR = median(CMR, na.rm = TRUE),
+    Min_CMR = min(CMR, na.rm = TRUE),
+    Max_CMR = max(CMR, na.rm = TRUE),
+    Total_Deaths = sum(total_deaths, na.rm = TRUE),
+    N_Municipality_Year = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+
+# Save to CSV
+write.csv(mortality_pop_sex_year,
+          "diabetes_CMR_municipality_sex_year_2018-2023.csv",
+          row.names = FALSE)
+
+# Save as RData file (could save multiple objects) - Recommended for R
+save(mortality_pop_sex_year, file = "Mexico_mor_pop_sex_year.RData")
+
+cat("\nData saved to: diabetes_CMR_municipality_sex_year_2018-2023.csv\n")
+
+
+# ========================================================================
+# CALCULATE POOLED CMR (ALL YEARS COMBINED)
+# ========================================================================
+
+# ========== Aggregate mortality across all years (2018-2023) ==========
+
+# Sum deaths by municipality and sex (all years combined)
+mortality_pooled <- combined_mun_sex_year %>%
+  mutate(SEX_NAME = if_else(is.na(SEX_NAME) | SEX_NAME == "" | SEX_NAME == "Not specified", "Male", SEX_NAME)) %>%
+  group_by(ENT_RESID, MUN_RESID, SEX_NAME) %>%
+  summarise(
+    total_deaths_pooled = sum(total_deaths, na.rm = TRUE),
+    n_years = n_distinct(YEAR),
+    years_covered = paste(sort(unique(YEAR)), collapse = ", "),
+    .groups = "drop"
+  ) %>%
+  arrange(ENT_RESID, MUN_RESID, SEX_NAME)
+
+# ========== Aggregate population across all years (2018-2023) ==========
+
+# Average annual population for the period (sum population / 6 years)
+population_pooled <- population_data_by_sex %>%
+  group_by(ENT_RESID, MUN_RESID, SEX_NAME, STATE_NAME, MUNICIPALITY_NAME) %>%
+  summarise(
+    total_population_all_years = sum(Population, na.rm = TRUE),
+    avg_annual_population = sum(Population, na.rm = TRUE) / 6,
+    .groups = "drop"
+  ) %>%
+  arrange(ENT_RESID, MUN_RESID, SEX_NAME)
+
+# ========== Join and calculate pooled CMR ==========
+
+cmr_pooled_sex <- mortality_pooled %>%
+  left_join(
+    population_pooled,
+    by = c("ENT_RESID", "MUN_RESID", "SEX_NAME")
+  ) %>%
+  mutate(
+    # Pooled CMR per 100,000
+    # Using average annual population as denominator
+    CMR_pooled = ifelse(avg_annual_population > 0, 
+                        (total_deaths_pooled / total_population_all_years) * 100000, 
+                        NA)
+  ) 
+  
+
+cat("\n=== POOLED CRUDE MORTALITY RATES (2018-2023 Combined) ===\n")
+head(cmr_pooled_sex, 30)
+
+# Summary statistics for pooled CMR
+cat("\n=== Pooled CMR Summary Statistics (All Years 2018-2023) ===\n")
+cmr_pooled_sex %>%
+  filter(!is.na(CMR_pooled) & CMR_pooled != 0) %>%
+  summarise(
+    Mean_CMR = mean(CMR_pooled, na.rm = TRUE),
+    Median_CMR = median(CMR_pooled, na.rm = TRUE),
+    Min_CMR = min(CMR_pooled, na.rm = TRUE),
+    Max_CMR = max(CMR_pooled, na.rm = TRUE),
+    SD_CMR = sd(CMR_pooled, na.rm = TRUE)
+  ) %>%
+  print()
+
+# By sex
+cat("\n=== Pooled CMR by Sex (2018-2023) ===\n")
+cmr_pooled_sex %>%
+  filter(!is.na(CMR_pooled) & CMR_pooled != 0) %>%
+  group_by(SEX_NAME) %>%
+  summarise(
+    Mean_CMR = mean(CMR_pooled, na.rm = TRUE),
+    Median_CMR = median(CMR_pooled, na.rm = TRUE),
+    Min_CMR = min(CMR_pooled, na.rm = TRUE),
+    Max_CMR = max(CMR_pooled, na.rm = TRUE),
+    Total_Deaths = sum(total_deaths_pooled, na.rm = TRUE),
+    Avg_Population = sum(avg_annual_population, na.rm = TRUE),
+    N_Municipalities = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+
+# Save to CSV
+write.csv(cmr_pooled_sex,
+          "diabetes_CMR_pooled_municipality_sex_2018-2023.csv",
+          row.names = FALSE)
+
+cat("\nData saved to: diabetes_CMR_pooled_municipality_sex_2018-2023.csv\n")
+
+
+```
+
+### ASDMR: Mexico
+
+```{r ASDMR}
+
+# Age-standardized Diabetes Mortality Rate: Mexico
+# 1. Standardize the age group column name
+age_mun_year_wide_collapsed <- age_mun_year_wide_collapsed %>%
+  rename(Age_Groups = AGE_GROUP_COLLAPSED)
+
+county_count_by_state_mx <- age_mun_year_wide_collapsed %>%
+  distinct(ENT_RESID, MUN_RESID) %>%   # make sure no duplicates
+  count(ENT_RESID, name = "n_counties") %>%
+  arrange(desc(n_counties))
+county_count_by_state_mx
+
+# Merge the population and Mortality datasets by ENT_RESID and MUN_RESID
+Mexico_asdmr_data <- age_mun_year_wide_collapsed %>%
+  left_join(dataset_tidy %>% 
+              select(-STATE_NAME, -MUNICIPALITY_NAME), 
+            by = c("ENT_RESID", "MUN_RESID","Age_Groups"))
+
+ # age_mun_year_wide_collapsed %>%
+ #  count(ENT_RESID, MUN_RESID, Age_Groups) %>%
+ #  filter(n > 1)
+
+
+# WHO World Standard Population (2000–2025)
+
+who_std <- tibble(
+  Age_Groups = c(
+    "0 to 4 years", "5 to 9 years", "10 to 14 years", "15 to 19 years",
+                 "20 to 24 years", "25 to 29 years", "30 to 34 years", "35 to 39 years",
+                 "40 to 44 years", "45 to 49 years", "50 to 54 years", "55 to 59 years",
+                 "60 to 64 years", "65 to 69 years", "70 to 74 years", "75 to 79 years",
+                 "80 to 84 years", "85+ years"),
+  Std_Weight = c(0.0886, 0.0869,0.0860,0.0847,0.0822,0.0793,0.0761,0.0715,0.0659,
+                 0.0604,0.0537,0.0455,0.0372,0.0296,0.0221,0.0152,0.0091,0.0064))
+
+# Merge WHO standard into merged dataset
+merged_std <- Mexico_asdmr_data %>%
+  left_join(who_std, by = "Age_Groups")
+
+# Example: use Total_2018_2023 population and total deaths for that period
+# You must have a "Deaths" column in merged_dataset
+merged_std <- merged_std %>%
+  mutate(
+    rate = (total_mor_2018_2023 / Total_pop_2018_2023) * 100000
+  )
+
+# Calculate ASMR
+asmr_county_mx <- merged_std %>%
+  group_by(STATE_NAME, MUNICIPALITY_NAME, ENT_RESID, MUN_RESID) %>%
+  summarise(
+    ASMR = sum(rate * Std_Weight, na.rm = TRUE) / sum(Std_Weight[!is.na(rate) & !is.na(Std_Weight)], na.rm = TRUE),
+    deaths_total= sum(total_mor_2018_2023, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+asmr_county_mx<- asmr_county_mx %>%
+  bind_rows(
+    tibble(
+      STATE_NAME = "Sonora",
+      MUNICIPALITY_NAME = "Onavas",
+      ENT_RESID = "26",
+      MUN_RESID = "044",      
+      ASMR = 0,
+      deaths_total = 0
+    )
+  )
+
+# asmr_county_mx %>%
+#   count(ENT_RESID, MUN_RESID) %>%
+#   filter(n > 1)
+
+head(asmr_county_mx)
+
+save(asmr_county_mx, file = "county_asdmr_mx.RData")
+
+
+
+
+```
+
+## USA Border States
+
+### Crude Mortality Rate: USA
+
+```{r CDR2, warning=FALSE, echo==FALSE}
+
+# Import the CSV file
+USA_dm_mor_data <- read_csv(path_cdc_clean)
+
+# Display basic information about the dataset
+glimpse(USA_dm_mor_data)
+
+# Reusable county-name cleaner
+clean_county_name <- function(x) {
+  x %>%
+    # remove standard "Type, ST" suffices
+    str_remove("\\s+(County|Parish|Borough|Census Area|Municipality|City and Borough),\\s*[A-Z]{2}$") %>%
+    # also handle when no state suffix is present
+    str_remove("\\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$") %>%
+    # trim
+    str_trim()
+}
+
+
+# Reusable code formatter → adds STATEFP, COUNTYFP, GEOID, COUNTRY
+add_geo_codes <- function(df, state_col = STATEFP, county_col = COUNTYFP) {
+  df %>%
+    mutate(
+      STATEFP  = sprintf("%02d", as.integer({{ state_col }})),
+      COUNTYFP = sprintf("%03d", as.integer({{ county_col }}) %% 1000),
+      GEOID    = paste0(STATEFP, COUNTYFP),
+      COUNTRY  = "USA"
+    )
+}
+
+## Rename columns and clean COUNTY_NAME
+USA_dm_mor_data <- USA_dm_mor_data %>%
+  rename(
+    STATE_NAME = State,
+    COUNTY_NAME = County,
+    STATEFP = `State Code`,
+    COUNTYFP = `County Code`
+  ) %>%
+  mutate(
+    COUNTY_NAME = clean_county_name(COUNTY_NAME)
+  ) %>%
+  add_geo_codes(state_col = STATEFP, county_col = COUNTYFP)
+
+# Quick checks
+USA_dm_mor_data %>%
+  select(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP, GEOID, COUNTRY) %>%
+  head(10)
+
+str(USA_dm_mor_data)
+
+USA_dm_mor_data %>%
+  select(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP, GEOID, COUNTRY, Deaths, Population) %>%
+  head(15)
+
+# Clean COUNTY_NAME: remove "County, XX" suffix (e.g., "Apache County, AZ" -> "Apache")
+USA_dm_mor_data <- USA_dm_mor_data %>%
+  mutate(
+    COUNTY_NAME = str_remove(COUNTY_NAME, " County, [A-Z]{2}$")
+  )
+
+# Check the renamed and cleaned columns
+USA_dm_mor_data %>%
+  select(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP) %>%
+  head(10)
+
+##Format STATEFP and COUNTYFP
+  # Format STATEFP: make single digits double digits (e.g., 4 -> 04)
+USA_dm_mor_data <- USA_dm_mor_data %>%
+  mutate(
+    STATEFP = sprintf("%02d", as.numeric(STATEFP))
+  )
+
+# Format COUNTYFP: keep only last three digits (e.g., 4001 -> 001)
+USA_dm_mor_data <- USA_dm_mor_data %>%
+  mutate(
+    COUNTYFP = sprintf("%03d", as.numeric(COUNTYFP) %% 1000)
+  )
+
+# Check the formatting
+USA_dm_mor_data %>%
+  select(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP) %>%
+  head(10)
+
+## 4. Create GEOID and COUNTRY variables
+
+# Create GEOID variable (combination of STATEFP and COUNTYFP)
+# This will be 5 digits (2 for state + 3 for county)
+USA_dm_mor_data <- USA_dm_mor_data %>%
+  mutate(
+    GEOID = paste0(STATEFP, COUNTYFP),
+    COUNTRY = "USA"
+  )
+
+# Display the final dataset structure
+USA_dm_mor_data %>%
+  select(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP, GEOID, COUNTRY) %>%
+  head(10)
+
+# Show column names and types
+str(USA_dm_mor_data)
+
+# Display first few rows of key columns
+USA_dm_mor_data %>%
+  select(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP, GEOID, COUNTRY, Deaths, Population) %>%
+  head(15)
+
+# Save as RData file (could save multiple objects) - Recommended for R
+save(USA_dm_mor_data, file = "USA_dm_mor_data.RData")
+
+
+```
+
+### ASDMR: USA
+
+```{r setup, warning=FALSE, include=FALSE}
+
+# Age-standardized Diabetes Mortality Rate: USA
+# ============================================================
+# County-level ASMR (WHO 2000–2025) for your CDC file
+# ============================================================
+
+library(tidyverse)
+library(readr)
+
+# Reusable county-name cleaner
+clean_county_name <- function(x) {
+  x %>%
+    # remove standard "Type, ST" suffices
+    str_remove("\\s+(County|Parish|Borough|Census Area|Municipality|City and Borough),\\s*[A-Z]{2}$") %>%
+    # also handle when no state suffix is present
+    str_remove("\\s+(County|Parish|Borough|Census Area|Municipality|City and Borough)$") %>%
+    # trim
+    str_trim()
+}
+
+# Reusable code formatter → adds STATEFP, COUNTYFP, GEOID, COUNTRY
+add_geo_codes <- function(df, state_col = STATEFP, county_col = COUNTYFP) {
+  df %>%
+    mutate(
+      STATEFP  = sprintf("%02d", as.integer({{ state_col }})),
+      COUNTYFP = sprintf("%03d", as.integer({{ county_col }}) %% 1000),
+      GEOID    = paste0(STATEFP, COUNTYFP),
+      COUNTRY  = "USA"
+    )
+}
+
+# ---- 1) Load data
+path <- path_cdc_age
+
+df_raw <- read_csv(path, show_col_types = FALSE)
+
+df <- df_raw %>%
+  mutate(
+    Deaths = suppressWarnings(as.numeric(Deaths)),
+    Population = suppressWarnings(as.numeric(Population))
+  ) %>%
+  filter(!is.na(Population), Population > 0, !is.na(Deaths)) %>%
+  mutate(
+    `Five-Year Age Groups` = ifelse(`Five-Year Age Groups` %in% c("< 1 year","1-4 years"),
+                                    "0-4 years", `Five-Year Age Groups`)
+  )
+
+who_weights <- tibble::tribble(
+  ~age5,               ~w,
+  "0-4 years",          0.0886,
+  "5-9 years",          0.0869,
+  "10-14 years",        0.0860,
+  "15-19 years",        0.0847,
+  "20-24 years",        0.0822,
+  "25-29 years",        0.0793,
+  "30-34 years",        0.0761,
+  "35-39 years",        0.0715,
+  "40-44 years",        0.0659,
+  "45-49 years",        0.0604,
+  "50-54 years",        0.0537,
+  "55-59 years",        0.0455,
+  "60-64 years",        0.0372,
+  "65-69 years",        0.0296,
+  "70-74 years",        0.0221,
+  "75-79 years",        0.0152,
+  "80-84 years",        0.0091,
+  "85 years and over",  0.0064
+)
+
+df_age <- df %>%
+  mutate(age5 = `Five-Year Age Groups`) %>%
+  group_by(State, County, across(any_of("Year")), age5) %>%
+  summarise(
+    deaths = sum(Deaths, na.rm = TRUE),
+    population = sum(Population, na.rm = TRUE),
+    .groups = "drop_last"
+  ) %>%
+  ungroup() %>%
+  left_join(who_weights, by = "age5") %>%
+  mutate(rate = (deaths / population) * 100000)
+
+group_vars <- c("State", "County")
+if ("Year" %in% names(df_age)) group_vars <- c(group_vars, "Year")
+
+asmsr_county_us <- df_age %>%
+  group_by(across(all_of(group_vars))) %>%
+  summarise(
+    asmr_per_100k = sum(rate * w, na.rm = TRUE) / sum(w[!is.na(rate) & !is.na(w)], na.rm = TRUE),
+    deaths_total  = sum(deaths, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(State, County, across(any_of("Year")))
+
+
+geo_lookup <- df_raw %>%
+  transmute(
+    STATE_NAME = State,
+    COUNTY_NAME = County,
+    STATEFP = `State Code`,
+    COUNTYFP = `County Code`
+  ) %>%
+  mutate(COUNTY_NAME = clean_county_name(COUNTY_NAME)) %>%
+  distinct(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP) %>%
+  add_geo_codes(state_col = STATEFP, county_col = COUNTYFP)
+
+asmr_county_us <- asmsr_county_us %>%
+  rename(STATE_NAME = State, COUNTY_NAME = County) %>%
+  mutate(COUNTY_NAME = clean_county_name(COUNTY_NAME)) %>%
+  left_join(geo_lookup, by = c("STATE_NAME","COUNTY_NAME")) %>%
+  relocate(STATE_NAME, COUNTY_NAME, STATEFP, COUNTYFP, GEOID, COUNTRY)
+
+head(asmr_county_us)
+
+# write_csv(asmsr_county, "county_asmr_who.csv")
+
+save(asmr_county_us, file = "county_asdmr_US.RData")
+
+```
+
+## Combined Border Region
+
+### Crude Mortality Rate: USMX
+
+load("USA_dm_mor_data.RData")
+
+```{r USAMX, warning=FALSE, echo=FALSE}
+
+load("Mexico_dm_mor_data.RData")
+load("USA_dm_mor_data.RData")
+
+
+Mexico_dm_mor_data <- Mexico_dm_mor_data %>%
+  rename(
+    COUNTY_NAME = `MUNICIPALITY_NAME`,
+    STATEFP = `ENT_RESID`,
+    COUNTYFP = `MUN_RESID`,
+    Deaths= `total_deaths`,
+    Population=`Total_Population`,
+    `Crude Rate Lower 95% Confidence Interval`=`CDR_Lower_CI_Exact`,
+    `Crude Rate Upper 95% Confidence Interval`= `CDR_Upper_CI_Exact`,
+    `Crude Rate`= `Crude_Death_Rate`,
+    `Crude Rate Standard Error`=`SE_rate`
+  ) %>% 
+   mutate(
+    GEOID = paste0(STATEFP, COUNTYFP),
+    COUNTRY = "Mexico"
+  )
+
+# Combine the datasets
+USA_dm_mor_data <- USA_dm_mor_data %>%
+  mutate(
+    `Crude Rate` = as.numeric(`Crude Rate`)
+  )
+
+
+county_dm_mor_data_USMX <- bind_rows(USA_dm_mor_data, Mexico_dm_mor_data)
+
+save(county_dm_mor_data_USMX, file = "county_dm_mor_data_USMX.RData")
+
+```
+
+### ASDMR: USMX
+
+```{r}
+
+load("county_asdmr_mx.RData")
+load("county_asdmr_us.RData")
+
+write_csv(asmr_county_mx, "county_asdmr_mx.csv")
+write_csv(asmr_county_us, "county_asdmr_us.csv")
+
+county_asdmr_mx <- asmr_county_mx %>%
+  rename(
+    COUNTY_NAME = `MUNICIPALITY_NAME`,
+    STATEFP = `ENT_RESID`,
+    COUNTYFP = `MUN_RESID`,
+    asmr_per_100k= `ASMR`
+  ) %>% 
+   mutate(
+    GEOID = paste0(STATEFP, COUNTYFP),
+    COUNTRY = "Mexico"
+  )
+
+# just rename data to be consistent
+county_asdmr_us <- asmr_county_us
+
+# Combine the datasets
+county_asdmr_USMX <- bind_rows(county_asdmr_us, county_asdmr_mx)
+
+save(county_asdmr_USMX, file = "county_asdmr_USMX.RData")
+
+```
+
+## Map data setup
+
+### Shape files
+
+```{r warning=FALSE, message=FALSE}
+
+# install.packages("rnaturalearth")
+
+required_packages <- c(
+  "sf", "maps", "mapdata", "usmap", "leaflet", "plotly",
+  "viridis", "RColorBrewer", "scales", "tigris", "rmapshaper"
+)
+
+# Uncomment to install missing packages
+install.packages(required_packages[!required_packages %in% installed.packages()])
+
+library(sf)
+library(ggplot2) 
+library(dplyr)
+library(viridis)
+library(leaflet)
+library(DT)
+library(scales)
+library(foreign)
+library(rnaturalearth)
+library(rnaturalearthhires)
+
+library(maps)
+library(mapdata)
+library(usmap)
+library(plotly)
+library(RColorBrewer)
+library(scales)
+library(tigris)
+library(rmapshaper)
+
+# Set spatial options
+options(tigris_use_cache = TRUE)
+sf_use_s2(FALSE)  # Disable spherical geometry for simpler operations
+
+# 1. Set path
+file_path <- path_shapefiles
+
+# 2. Load municipalities in Mexico and counties in USA
+
+# Define US border states by their CVE_ENT codes
+mx_border_states <- c(
+  "02",  # Baja California
+  "05",  # Coahuila
+  "08",  # Chihuahua
+  "19",  # Nuevo LeC3n
+  "26",  # Sonora
+  "28"   # Tamaulipas
+)
+
+us_border_states <- c(
+  "04",  # Arizona
+  "06",  # California  
+  "35",  # New Mexico
+  "48"   # Texas
+)
+
+mexico_mun <- st_read(file.path(file_path, "00mun.shp"), options = "ENCODING=LATIN1")
+mexico_states <- st_read(file.path(file_path, "00ent.shp"), options = "ENCODING=LATIN1")
+
+usa_counties <- st_read(file.path(file_path, "tl_2024_us_county.shp"))
+usa_states <- st_read(file.path(file_path, "tl_2024_us_state.shp"))
+
+
+# Rename columns in the mexico datasets
+mexico_mun <- mexico_mun %>%
+  rename(
+    STATEFP = CVE_ENT,
+    COUNTYFP = CVE_MUN,
+    COUNTY_NAME = NOMGEO,
+    GEOID = CVEGEO
+  )
+
+mexico_states <- mexico_states %>%
+  rename(
+    STATEFP = CVE_ENT,
+    STATE_NAME = NOMGEO,
+    GEOID = CVEGEO
+  )
+
+usa_states <- usa_states %>%
+  rename(
+    STATE_NAME = NAME
+  )
+
+usa_counties <- usa_counties %>%
+  rename(
+    COUNTY_NAME = NAME
+  )
+
+# st_geometry_type(usa_counties)
+# st_geometry_type(mexico_mun)
+
+# Standardize columns before binding
+# names(mexico_mun) <- names(usa_counties)
+
+# st_crs(usa_counties)
+# st_crs(mexico_mun)
+
+# Match mexico_mun to the CRS of usa_counties
+usa_counties <- st_transform(usa_counties, st_crs(mexico_mun))
+usa_states <- st_transform(usa_states, st_crs(mexico_states))
+
+
+# Select only the common columns from each
+usa_subset <- usa_counties %>%
+  select(STATEFP, COUNTYFP, COUNTY_NAME, GEOID, geometry)%>%
+  mutate(COUNTRY = "USA")
+
+mexico_subset <- mexico_mun %>%
+  select(STATEFP, COUNTYFP, COUNTY_NAME, GEOID, geometry)%>%
+  mutate(COUNTRY = "Mexico")
+
+
+usa_states_subset <- usa_states %>%
+  select(STATEFP, STATE_NAME, GEOID, geometry) %>%
+  mutate(COUNTRY = "USA")
+
+mexico_states_subset <- mexico_states %>%
+  select(STATEFP, STATE_NAME, GEOID, geometry) %>%
+  mutate(COUNTRY = "Mexico")
+
+# Append
+usa_mexico_counties <- rbind(usa_subset, mexico_subset)
+usa_mexico_states <- rbind(usa_states_subset, mexico_states_subset)
+
+# Tag counties as part of US-Mexico border states
+usa_mexico_counties <- usa_mexico_counties %>%
+  mutate(
+    is_us_border = case_when(
+      COUNTRY == "USA" & STATEFP %in% us_border_states ~ "US-Mexico Border State",
+      COUNTRY == "Mexico" & STATEFP %in% mx_border_states ~ "US-Mexico Border State",      TRUE ~ "Interior State"
+    )
+  )
+
+
+excluded_statefps <- c(
+  "02",  # Alaska
+  "15",  # Hawaii
+  "72",  # Puerto Rico
+  "60",  # American Samoa
+  "66",  # Guam
+  "69",  # Northern Mariana Islands
+  "78"   # U.S. Virgin Islands
+)
+
+# Filter counties
+usa_mexico_counties_filtered <- usa_mexico_counties %>%
+  filter(!(COUNTRY == "USA" & STATEFP %in% excluded_statefps))
+
+map_data_counties_USMX <- usa_mexico_counties_filtered
+
+saveRDS(map_data_counties_USMX, file.path(path_proc, "map_data_counties_USMX.rds"))
+
+save(map_data_counties_USMX, file = "map_data_counties_USMX.RData")
+
+
+# State-level data
+
+# Prepare diabetes data for mapping (2021 prevalence)
+# diabetes_map_data <- diabetes_data %>%
+#   filter(
+#     year == 2021,
+#     metric_name == "Rate",
+#     age_name == "All ages",
+#     sex_name == "Both",
+#     cause_name == "Diabetes mellitus",
+#     measure_name == "Prevalence"
+#   ) %>%
+#   mutate(
+#     # Standardize location names for matching
+#     location_clean = case_when(
+#       location_name == "Nuevo LeC3n" ~ "Nuevo Leon",
+#       location_name == "Nuevo LeCB3n" ~ "Nuevo Leon",
+#       TRUE ~ location_name
+#     )
+#   ) %>%
+#   rename(
+#     COUNTRY = country,
+#     STATE_NAME = location_name
+#   )
+# 
+
+usa_mexico_states_filtered <- usa_mexico_states %>%
+  filter(!(COUNTRY == "USA" & STATEFP %in% excluded_statefps))
+
+usa_mexico_states_filtered <- usa_mexico_states_filtered %>%
+   mutate(
+    STATE_NAME = ifelse(
+      tolower(trimws(STATE_NAME)) == "coahuila de zaragoza",
+      "Coahuila",
+      STATE_NAME
+    )
+  )
+
+saveRDS(usa_mexico_states_filtered, file.path(path_proc, "map_data_states_USMX.rds"))
+# 
+# 
+# # join state-level diabetes data with shapefiles
+# # Join using both STATE_NAME and COUNTRY
+# 
+# usa_mexico_states_filtered <- 
+# 
+# joined_diabetes_map_states_data <- left_join(
+#   usa_mexico_states_filtered,
+#   diabetes_map_data,
+#   by = c("STATE_NAME", "COUNTRY")
+# )
+# 
+# saveRDS(joined_diabetes_map_states_data, file.path(path_proc, "GBD_diabetes_2021_map_data_states_USMX.rds"))
+
+```
+
+### Crude Mortality Rate: USMX Map data
+
+```{r}
+# load datasets
+load("county_dm_mor_data_USMX.RData")
+map_data_counties_USMX <-readRDS(file.path(path_proc, "map_data_counties_USMX.rds"))
+
+# join county-level diabetes data with shapefiles
+# Join using both COUNTYFP, STATEFP, COUNTRY
+joined_diabetes_map_county_data <- left_join(
+  map_data_counties_USMX %>% select(-COUNTY_NAME, -GEOID),
+  county_dm_mor_data_USMX,
+  by = c("COUNTRY","STATEFP", "COUNTYFP")
+)
+
+# str(joined_diabetes_map_county_data)
+# glimpse(joined_diabetes_map_county_data)
+
+
+# Save as RData file (could save multiple objects) - Recommended for R
+save(joined_diabetes_map_county_data, file = "joined_diabetes_map_county_data.RData")
+
+```
+
+### ASDMR: USMX Map data
+
+```{r}
+# load datasets
+load("county_asdmr_USMX.RData")
+load("map_data_counties_USMX.RData")
+
+# county_asdmr_USMX %>%
+#   count(COUNTRY, STATEFP, COUNTYFP) %>%
+#   filter(n > 1)
+
+# join county-level diabetes data with shapefiles
+# Join using both COUNTYFP, STATEFP, COUNTRY
+joined_asdmr_map_county_data <- left_join(
+  map_data_counties_USMX %>% select(-COUNTY_NAME, -GEOID),
+  county_asdmr_USMX,
+  by = c("COUNTRY","STATEFP", "COUNTYFP")
+)
+
+# glimpse(joined_asdmr_map_county_data)
+
+
+# Save as RData file (could save multiple objects) - Recommended for R
+save(joined_asdmr_map_county_data, file = "joined_asdmr_map_county_data.RData")
+```
