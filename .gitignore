@@ -1,0 +1,20 @@
+# Raw and processed data (too large / restricted)
+data/raw/
+data/processed/
+data/external/
+
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# Quarto output files
+_site/
+_freeze/
+*.html
+*.pdf
+
+# OS files
+.DS_Store
+Thumbs.db
