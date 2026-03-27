@@ -5,7 +5,7 @@
 **Data coverage:** 2018–2023  
 **Sources:** INEGI, CONAPO, CDC WONDER  
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.19246775)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19246775.svg)](https://doi.org/10.5281/zenodo.19246775)
 
 ---
 
@@ -20,7 +20,7 @@ Two mortality measures are computed and mapped:
 
 Spatial analyses include **Local Indicators of Spatial Association (LISA)**, **Getis-Ord G\* hotspot detection**, and **Moran scatterplots**, all produced at the county/municipality level.
 
-> **Data availability:** All data files are archived on Zenodo at [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.19246775). See the [Setup](#setup) section for download and placement instructions.
+> **Data availability:** All data files are archived on Zenodo at [https://doi.org/10.5281/zenodo.19246775](https://doi.org/10.5281/zenodo.19246775). See the [Setup](#setup) section for download and placement instructions.
 
 ---
 
@@ -197,7 +197,7 @@ here::set_here()   # creates a .here file at the repo root
 
 ### 3. Download data from Zenodo
 
-1. Go to [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.19246775)
+1. Go to [https://doi.org/10.5281/zenodo.19246775](https://doi.org/10.5281/zenodo.19246775)
 2. Download the three folders: **raw.zip**, **external.zip**, and **processed.zip**
 3. Extract each ZIP and place the contents inside your local `data/` folder so the structure matches the [Repository Structure](#repository-structure) section above
 
