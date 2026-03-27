@@ -1,20 +1,18 @@
-# Raw and processed data (too large / restricted)
-data/raw/
-data/processed/
-data/external/
+# ── Data folders (all hosted on Zenodo — see README) ──────────────────────────
+data/
 
-# R session files
+# ── R session files ────────────────────────────────────────────────────────────
 .Rhistory
 .RData
 .Rproj.user/
 *.Rproj
 
-# Quarto output files
+# ── Quarto build output ────────────────────────────────────────────────────────
 _site/
 _freeze/
 *.html
 *.pdf
 
-# OS files
+# ── OS files ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
